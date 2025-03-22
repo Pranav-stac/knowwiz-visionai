@@ -59,12 +59,14 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SceneDescriptionProvider()),
       ],
       child: MaterialApp(
-        title: 'Vision AI',
+        title: 'VisionAI',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
+        theme: AppTheme.lightTheme.copyWith(
           useMaterial3: true,
           colorScheme: lightColorScheme,
-          textTheme: GoogleFonts.poppinsTextTheme(),
+          textTheme: GoogleFonts.poppinsTextTheme(
+            Theme.of(context).textTheme,
+          ),
           scaffoldBackgroundColor: const Color(0xFFF8F9FA),
           appBarTheme: const AppBarTheme(
             backgroundColor: Colors.transparent,
@@ -86,11 +88,18 @@ class MyApp extends StatelessWidget {
               ),
             ),
           ),
+          extensions: <ThemeExtension<dynamic>>[
+            CustomFonts(
+              openDyslexic: const TextStyle(fontFamily: 'OpenDyslexic'),
+            ),
+          ],
         ),
-        darkTheme: ThemeData(
+        darkTheme: AppTheme.darkTheme.copyWith(
           useMaterial3: true,
           colorScheme: darkColorScheme,
-          textTheme: GoogleFonts.poppinsTextTheme(ThemeData.dark().textTheme),
+          textTheme: GoogleFonts.poppinsTextTheme(
+            Theme.of(context).textTheme,
+          ),
           scaffoldBackgroundColor: const Color(0xFF121212),
           appBarTheme: const AppBarTheme(
             backgroundColor: Colors.transparent,
@@ -112,10 +121,43 @@ class MyApp extends StatelessWidget {
               ),
             ),
           ),
+          extensions: <ThemeExtension<dynamic>>[
+            CustomFonts(
+              openDyslexic: const TextStyle(fontFamily: 'OpenDyslexic'),
+            ),
+          ],
         ),
         themeMode: ThemeMode.system,
         home: const SplashScreen(),
       ),
+    );
+  }
+}
+
+// Custom ThemeExtension for additional fonts
+class CustomFonts extends ThemeExtension<CustomFonts> {
+  final TextStyle openDyslexic;
+
+  CustomFonts({
+    required this.openDyslexic,
+  });
+
+  @override
+  ThemeExtension<CustomFonts> copyWith({
+    TextStyle? openDyslexic,
+  }) {
+    return CustomFonts(
+      openDyslexic: openDyslexic ?? this.openDyslexic,
+    );
+  }
+
+  @override
+  ThemeExtension<CustomFonts> lerp(ThemeExtension<CustomFonts>? other, double t) {
+    if (other is! CustomFonts) {
+      return this;
+    }
+    return CustomFonts(
+      openDyslexic: TextStyle.lerp(openDyslexic, other.openDyslexic, t)!,
     );
   }
 }
