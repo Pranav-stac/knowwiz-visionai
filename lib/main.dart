@@ -1,23 +1,51 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:visionai/providers/scene_description_provider.dart';
 import 'package:visionai/screens/splash_screen.dart';
 import 'package:visionai/theme/app_theme.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setPreferredOrientations([
+  
+  // Initialize Firebase
+  try {
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+        apiKey: "AIzaSyC3IDr4Hd2whhFsNOlhjuZ59kASXtEW-lQ",
+        authDomain: "vision-ai-f6345.firebaseapp.com",
+        projectId: "vision-ai-f6345",
+        storageBucket: "vision-ai-f6345.firebasestorage.app",
+        messagingSenderId: "335489594965",
+        appId: "1:335489594965:web:d1c8700db9dfedb74ec6dc",
+        measurementId: "G-E3M7W3KFJV",
+      ),
+    );
+    
+    // Configure Firebase Database
+    FirebaseDatabase.instance.setPersistenceEnabled(true); // Enable offline persistence
+    FirebaseDatabase.instance.ref().keepSynced(true); // Keep the database synced
+  } catch (e) {
+    print('Error initializing Firebase: $e');
+    // You might want to show an error dialog or handle the error appropriately
+  }
+
+  // Set preferred orientations
+  await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.dark,
     ),
   );
+
   runApp(const MyApp());
 }
 
