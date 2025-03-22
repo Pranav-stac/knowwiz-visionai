@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:visionai/screens/features/captioning_screen.dart';
 import 'package:visionai/screens/features/voice_generation_screen.dart';
 import 'package:visionai/screens/features/scene_description_screen.dart';
-import 'package:visionai/screens/features/mental_health_screen.dart';
+
 import 'package:visionai/screens/features/volunteer_network_screen.dart';
 import 'package:visionai/screens/features/learning_resources_screen.dart';
 import 'package:visionai/screens/features/image_captioning_screen.dart';
@@ -21,7 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Widget> _screens = [
     const HomeContent(),
     const VolunteerNetworkScreen(),
-    const MentalHealthScreen(),
+   
     const ProfileScreen(),
   ];
 
@@ -321,13 +322,13 @@ class HomeContent extends StatelessWidget {
                     description: 'AI-driven emotional support',
                     icon: Icons.favorite,
                     color: Colors.red,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const MentalHealthScreen(),
-                        ),
-                      );
+                    onTap: () async {
+                      final url = 'https://useful-herring-radically.ngrok-free.app';
+                      if (await canLaunch(url)) {
+                        await launch(url);
+                      } else {
+                        throw 'Could not launch $url';
+                      }
                     },
                   ),
                   FeatureCard(
