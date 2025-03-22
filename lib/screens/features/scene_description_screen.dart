@@ -197,17 +197,29 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
     double volume = prefs.getDouble('tts_volume') ?? 1.0;
     double pitch = prefs.getDouble('tts_pitch') ?? 1.0;
     
-    // Check available languages
+    // Debug: Print all available languages and voices
     try {
       var availableLanguages = await _flutterTts!.getLanguages;
       print('Available TTS languages: $availableLanguages');
       
-      // Set the language - will automatically use best match if exact match not available
+      var availableVoices = await _flutterTts!.getVoices;
+      print('Available TTS voices: $availableVoices');
+      
+      // First set language to ensure it's supported
       await _flutterTts!.setLanguage(language);
       
-      // Check what language was actually set
-      String? currentLang = await _flutterTts!.getDefaultVoice;
-      print('Actual TTS language set: $currentLang');
+      // For Hindi specifically, explicitly set voice if we can find one
+      if (language == 'hi-IN') {
+        var voices = await _flutterTts!.getVoices;
+        var hindiVoice = voices.where((voice) => 
+            voice.toString().toLowerCase().contains('hindi') || 
+            voice.toString().contains('hi-IN'));
+        
+        if (hindiVoice.isNotEmpty) {
+          print('Setting Hindi voice: ${hindiVoice.first}');
+          await _flutterTts!.setVoice({"name": hindiVoice.first.toString(), "locale": "hi-IN"});
+        }
+      }
     } catch (e) {
       print('Error setting TTS language: $e');
       // Fallback to English if there's an error
@@ -217,6 +229,14 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
     await _flutterTts!.setSpeechRate(speechRate);
     await _flutterTts!.setVolume(volume);
     await _flutterTts!.setPitch(pitch);
+    
+    // Configure error and completion handlers
+    _flutterTts!.setStartHandler(() {
+      print('TTS started speaking');
+      setState(() {
+        _isSpeaking = true;
+      });
+    });
     
     _flutterTts!.setCompletionHandler(() {
       setState(() {
@@ -1135,25 +1155,59 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
         setState(() {
           _isSpeaking = false;
         });
-      } else {
-        print('Starting speech');
-        setState(() {
-          _isSpeaking = true;
-        });
-        
-        // For debugging
-        print('Speaking text: ${description.substring(0, min(50, description.length))}...');
-        
-        // Speak the text
-        var result = await _flutterTts!.speak(description);
-        print('TTS speak result: $result');
-        // The _isSpeaking will be set to false by the completion handler in _initTts
+        return;
       }
+      
+      print('Starting speech');
+      // Get current language
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      String language = prefs.getString('tts_language') ?? 'en-US';
+      
+      // Make sure language is set correctly
+      await _flutterTts!.setLanguage(language);
+      
+      // For Hindi specifically, try to set the voice directly
+      if (language == 'hi-IN') {
+        try {
+          var voices = await _flutterTts!.getVoices;
+          var hindiVoice = voices.where((voice) => 
+              voice.toString().toLowerCase().contains('hindi') || 
+              voice.toString().contains('hi-IN'));
+          
+          if (hindiVoice.isNotEmpty) {
+            print('Setting Hindi voice before speaking: ${hindiVoice.first}');
+            await _flutterTts!.setVoice({"name": hindiVoice.first.toString(), "locale": "hi-IN"});
+          }
+        } catch (e) {
+          print('Error setting Hindi voice: $e');
+        }
+      }
+      
+      // For debugging
+      print('Speaking text: ${description.substring(0, min(50, description.length))}...');
+      print('With language: $language');
+      
+      setState(() {
+        _isSpeaking = true;
+      });
+      
+      // Speak the text
+      var result = await _flutterTts!.speak(description);
+      print('TTS speak result: $result');
+      // The _isSpeaking will be set to false by the completion handler in _initTts
     } catch (e) {
       print('Error with text-to-speech: $e');
       setState(() {
         _isSpeaking = false;
       });
+      
+      // Show error to user
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Speech error: ${e.toString()}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -1175,6 +1229,15 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
       {'name': 'Korean', 'code': 'ko-KR'},
       {'name': 'Chinese', 'code': 'zh-CN'},
     ];
+    
+    // Get available voices for displaying
+    List<dynamic> availableVoices = [];
+    try {
+      availableVoices = await _flutterTts!.getVoices;
+      print('Dialog - Available voices: ${availableVoices.length}');
+    } catch (e) {
+      print('Error getting voices: $e');
+    }
     
     // Get current settings from preferences, or use defaults
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -1278,7 +1341,7 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       // Find the language code for the selected language
                       String langCode = 'en-US';
                       for (var lang in commonLanguages) {
@@ -1290,10 +1353,23 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
                       
                       // Test the current settings
                       if (_flutterTts != null) {
-                        _flutterTts!.setLanguage(langCode);
-                        _flutterTts!.setSpeechRate(speechRate);
-                        _flutterTts!.setVolume(volume);
-                        _flutterTts!.setPitch(pitch);
+                        await _flutterTts!.setLanguage(langCode);
+                        
+                        // For Hindi specifically, we need to explicitly set a voice
+                        if (langCode == 'hi-IN') {
+                          var hindiVoices = availableVoices.where((voice) => 
+                              voice.toString().toLowerCase().contains('hindi') || 
+                              voice.toString().contains('hi-IN'));
+                          
+                          if (hindiVoices.isNotEmpty) {
+                            print('Testing with Hindi voice: ${hindiVoices.first}');
+                            await _flutterTts!.setVoice({"name": hindiVoices.first.toString(), "locale": "hi-IN"});
+                          }
+                        }
+                        
+                        await _flutterTts!.setSpeechRate(speechRate);
+                        await _flutterTts!.setVolume(volume);
+                        await _flutterTts!.setPitch(pitch);
                         
                         // Use a language-specific test message
                         String testMessage = "This is a test of the speech settings.";
@@ -1343,6 +1419,19 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
                   
                   // Save settings
                   await _flutterTts!.setLanguage(langCode);
+                  
+                  // For Hindi specifically, we need to explicitly set a voice
+                  if (langCode == 'hi-IN') {
+                    var hindiVoices = availableVoices.where((voice) => 
+                        voice.toString().toLowerCase().contains('hindi') || 
+                        voice.toString().contains('hi-IN'));
+                    
+                    if (hindiVoices.isNotEmpty) {
+                      print('Saving Hindi voice: ${hindiVoices.first}');
+                      await _flutterTts!.setVoice({"name": hindiVoices.first.toString(), "locale": "hi-IN"});
+                    }
+                  }
+                  
                   await _flutterTts!.setSpeechRate(speechRate);
                   await _flutterTts!.setVolume(volume);
                   await _flutterTts!.setPitch(pitch);
