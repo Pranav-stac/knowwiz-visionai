@@ -5,6 +5,7 @@ import '../../providers/scene_description_provider.dart';
 import '../../widgets/custom_text_field.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SceneQuestionScreen extends StatefulWidget {
   final String sceneId;
@@ -48,7 +49,7 @@ class _SceneQuestionScreenState extends State<SceneQuestionScreen> {
     setState(() {});
   }
   
-  // Start listening for speech
+  // Start listening for speech with language support
   void _startListening() async {
     if (!_speechAvailable) {
       print('Speech recognition not available');
@@ -65,12 +66,30 @@ class _SceneQuestionScreenState extends State<SceneQuestionScreen> {
       _isListening = true;
     });
     
+    // Get language preference from shared preferences
+    final prefs = await SharedPreferences.getInstance();
+    String languageCode = prefs.getString('tts_language') ?? 'en-US';
+    String speechLocale = 'en_US';
+    
+    // Map TTS language code to STT locale
+    if (languageCode == 'hi-IN') {
+      speechLocale = 'hi_IN';
+    } else if (languageCode == 'es-ES') {
+      speechLocale = 'es_ES';
+    } else if (languageCode == 'fr-FR') {
+      speechLocale = 'fr_FR';
+    } else if (languageCode == 'de-DE') {
+      speechLocale = 'de_DE';
+    }
+    
+    print('Starting speech recognition with locale: $speechLocale');
+    
     await _speech.listen(
       onResult: _onSpeechResult,
       listenFor: const Duration(seconds: 10),
       pauseFor: const Duration(seconds: 5),
       partialResults: true,
-      localeId: 'en_US', // Use device language by default
+      localeId: speechLocale,
     );
   }
   

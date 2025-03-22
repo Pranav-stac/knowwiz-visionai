@@ -6,14 +6,14 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class CaptioningScreen extends StatefulWidget {
-  const CaptioningScreen({super.key});
+class ImageCaptioningScreen extends StatefulWidget {
+  const ImageCaptioningScreen({super.key});
 
   @override
-  State<CaptioningScreen> createState() => _CaptioningScreenState();
+  State<ImageCaptioningScreen> createState() => _ImageCaptioningScreenState();
 }
 
-class _CaptioningScreenState extends State<CaptioningScreen> {
+class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
   bool _isListening = false;
   final List<CaptionItem> _captions = [];
   final ScrollController _scrollController = ScrollController();
@@ -27,7 +27,6 @@ class _CaptioningScreenState extends State<CaptioningScreen> {
   // Image generation variables
   String? _generatedImageUrl;
   bool _isGeneratingImage = false;
-  Timer? _imageGenerationTimer;
   String _lastProcessedText = '';
 
   @override
@@ -43,7 +42,6 @@ class _CaptioningScreenState extends State<CaptioningScreen> {
   void dispose() {
     _speech.stop();
     _scrollController.dispose();
-    _imageGenerationTimer?.cancel();
     super.dispose();
   }
   
@@ -89,17 +87,6 @@ class _CaptioningScreenState extends State<CaptioningScreen> {
       _currentVoiceText = '';
     });
     
-    // Set up timer for image generation
-    _imageGenerationTimer = Timer.periodic(
-      const Duration(seconds: 5), 
-      (timer) {
-        if (_currentVoiceText.isNotEmpty && _currentVoiceText != _lastProcessedText) {
-          _generateImageFromText(_currentVoiceText);
-          _lastProcessedText = _currentVoiceText;
-        }
-      }
-    );
-    
     await _speech.listen(
       onResult: _onSpeechResult,
       listenFor: const Duration(seconds: 30),
@@ -112,7 +99,6 @@ class _CaptioningScreenState extends State<CaptioningScreen> {
   
   void _stopListening() async {
     await _speech.stop();
-    _imageGenerationTimer?.cancel();
     setState(() {
       _isListening = false;
     });
@@ -215,16 +201,6 @@ class _CaptioningScreenState extends State<CaptioningScreen> {
     });
   }
 
-  void _saveCaptions() {
-    // In a real app, you would save the captions to a file or database
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Captions saved successfully'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-  
   void _showLanguageSettings() async {
     final prefs = await SharedPreferences.getInstance();
     
@@ -313,11 +289,10 @@ class _CaptioningScreenState extends State<CaptioningScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final size = MediaQuery.of(context).size;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Real-Time Captioning'),
+        title: const Text('Image Captioning'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -549,43 +524,12 @@ class _CaptioningScreenState extends State<CaptioningScreen> {
             ),
           ),
 
-          // Control Panel
+          // Microphone Control Panel
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             child: Column(
               children: [
-                // Caption Settings
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildSettingButton(
-                      icon: Icons.text_fields,
-                      label: 'Font Size',
-                      onTap: () {
-                        // Open font size settings
-                      },
-                    ),
-                    _buildSettingButton(
-                      icon: Icons.color_lens,
-                      label: 'Theme',
-                      onTap: () {
-                        // Open theme settings
-                      },
-                    ),
-                    _buildSettingButton(
-                      icon: Icons.language,
-                      label: 'Language',
-                      onTap: _showLanguageSettings,
-                    ),
-                    _buildSettingButton(
-                      icon: Icons.save_alt,
-                      label: 'Save',
-                      onTap: _saveCaptions,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                // Microphone Button
+                // Control Buttons
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -652,6 +596,12 @@ class _CaptioningScreenState extends State<CaptioningScreen> {
                           ),
                           onPressed: () {
                             // Share image
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Sharing not implemented yet'),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
                           },
                         ),
                       ),
@@ -672,47 +622,6 @@ class _CaptioningScreenState extends State<CaptioningScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSettingButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Theme.of(context).brightness == Brightness.light
-                    ? Colors.grey[100]
-                    : Colors.grey[800],
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

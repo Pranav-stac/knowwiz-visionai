@@ -5,6 +5,7 @@ import 'package:visionai/screens/features/scene_description_screen.dart';
 import 'package:visionai/screens/features/mental_health_screen.dart';
 import 'package:visionai/screens/features/volunteer_network_screen.dart';
 import 'package:visionai/screens/features/learning_resources_screen.dart';
+import 'package:visionai/screens/features/image_captioning_screen.dart';
 import 'package:visionai/widgets/feature_card.dart';
 import 'package:visionai/screens/profile/profile_screen.dart';
 
@@ -192,6 +193,20 @@ class HomeContent extends StatelessWidget {
                   ),
                   _buildQuickActionCard(
                     context,
+                    icon: Icons.image,
+                    title: 'Speech to Image',
+                    color: Colors.amber,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ImageCaptioningScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildQuickActionCard(
+                    context,
                     icon: Icons.record_voice_over,
                     title: 'Text to Voice',
                     color: Colors.green,
@@ -273,6 +288,20 @@ class HomeContent extends StatelessWidget {
                     },
                   ),
                   FeatureCard(
+                    title: 'Speech to Image',
+                    description: 'Generate images from speech',
+                    icon: Icons.image,
+                    color: Colors.amber,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ImageCaptioningScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  FeatureCard(
                     title: 'Voice Generation',
                     description: 'Generate natural speech from text',
                     icon: Icons.record_voice_over,
@@ -346,67 +375,7 @@ class HomeContent extends StatelessWidget {
               ),
             ),
 
-            // Recent Activity
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Recent Activity',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onBackground,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      // View all activity
-                    },
-                    child: Text(
-                      'View All',
-                      style: TextStyle(
-                        color: colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              itemCount: 3,
-              itemBuilder: (context, index) {
-                return _buildActivityItem(
-                  context,
-                  title: index == 0
-                      ? 'Scene Description'
-                      : index == 1
-                          ? 'Voice Generation'
-                          : 'Real-Time Captioning',
-                  time: index == 0
-                      ? '2 hours ago'
-                      : index == 1
-                          ? 'Yesterday'
-                          : '2 days ago',
-                  icon: index == 0
-                      ? Icons.camera_alt
-                      : index == 1
-                          ? Icons.record_voice_over
-                          : Icons.closed_caption,
-                  color: index == 0
-                      ? Colors.purple
-                      : index == 1
-                          ? Colors.green
-                          : Colors.blue,
-                );
-              },
-            ),
-            const SizedBox(height: 24),
+          
           ],
         ),
       ),

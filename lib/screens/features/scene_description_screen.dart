@@ -11,6 +11,8 @@ import '../../services/camera_service.dart';
 import '../../services/openai_service.dart';
 import 'scene_question_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:speech_to_text/speech_recognition_result.dart';
 
 class SceneDescriptionScreen extends StatefulWidget {
   const SceneDescriptionScreen({super.key});
@@ -32,6 +34,11 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
   final CameraService _cameraService = CameraService();
   FlutterTts? _flutterTts;
   bool _isSpeaking = false;
+  
+  // Speech to text variables
+  late stt.SpeechToText _speech;
+  bool _isListeningForVoiceCommand = false;
+  bool _speechAvailable = false;
   
   final List<String> _sampleDescriptions = [
     "A spacious living room with a gray sofa, coffee table, and a TV mounted on the wall. There's a window on the left with natural light coming in.",
@@ -63,6 +70,10 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
     _initCamera();
     _initTts();
     
+    // Initialize speech to text
+    _speech = stt.SpeechToText();
+    _initSpeech();
+    
     // Initialize the provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<SceneDescriptionProvider>(context, listen: false).init();
@@ -73,6 +84,7 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
   void dispose() {
     _animationController.dispose();
     _scanTimer?.cancel();
+    _speech.stop();
     super.dispose();
   }
 
@@ -255,6 +267,194 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
     print('TTS initialized with language: $language, rate: $speechRate');
   }
 
+  // Initialize speech recognition
+  void _initSpeech() async {
+    _speechAvailable = await _speech.initialize(
+      onStatus: (status) => print('Speech recognition status: $status'),
+      onError: (error) => print('Speech recognition error: $error'),
+    );
+    setState(() {});
+  }
+  
+  // Start listening for voice commands
+  void _startListeningForVoiceCommand() async {
+    if (!_speechAvailable) {
+      print('Speech recognition not available');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Speech recognition not available on this device'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    
+    setState(() {
+      _isListeningForVoiceCommand = true;
+    });
+    
+    // Get the current language from preferences
+    final prefs = await SharedPreferences.getInstance();
+    String languageCode = prefs.getString('tts_language') ?? 'en-US';
+    String speechLocale = 'en_US';
+    
+    // Map TTS language code to STT locale
+    if (languageCode == 'hi-IN') {
+      speechLocale = 'hi_IN';
+    } else if (languageCode == 'es-ES') {
+      speechLocale = 'es_ES';
+    } else if (languageCode == 'fr-FR') {
+      speechLocale = 'fr_FR';
+    } else if (languageCode == 'de-DE') {
+      speechLocale = 'de_DE';
+    }
+    
+    await _speech.listen(
+      onResult: _onVoiceCommandResult,
+      listenFor: const Duration(seconds: 5),
+      pauseFor: const Duration(seconds: 3),
+      partialResults: true,
+      localeId: speechLocale,
+    );
+  }
+  
+  // Stop listening for voice commands
+  void _stopListeningForVoiceCommand() async {
+    await _speech.stop();
+    setState(() {
+      _isListeningForVoiceCommand = false;
+    });
+  }
+  
+  // Handle voice command results
+  void _onVoiceCommandResult(SpeechRecognitionResult result) {
+    print('Voice command recognized: ${result.recognizedWords}');
+    if (result.finalResult) {
+      setState(() {
+        _isListeningForVoiceCommand = false;
+      });
+      
+      // Process the voice command
+      _processVoiceCommand(result.recognizedWords.toLowerCase());
+    }
+  }
+  
+  // Process voice command
+  void _processVoiceCommand(String command) {
+    // Handle different commands
+    if (command.contains('describe') || command.contains('scan') || 
+        command.contains('what do you see') || command.contains('tell me') ||
+        command.contains('batao') || command.contains('dekho')) {
+      
+      // Generate description
+      _generateDescription();
+    } 
+    // Handle text recognition commands in Hindi and English
+    else if (command.contains('text') || command.contains('likha') || 
+             command.contains('likha hua') || command.contains('kya likha') ||
+             command.contains('read') || command.contains('padho')) {
+      
+      // Analyze text in the scene
+      _analyzeSpecificInfo('text');
+    }
+    // Handle questions about specific objects
+    else if (command.contains('laptop') || command.contains('phone') || 
+             command.contains('screen') || command.contains('tv') ||
+             command.contains('mobile') || command.contains('computer')) {
+      
+      // If it seems like a question about what's written on a device
+      if (command.contains('kya likha') || command.contains('what') || 
+          command.contains('written') || command.contains('show')) {
+        _analyzeSpecificInfo('text');
+      }
+      // For general object identification
+      else {
+        _analyzeSpecificInfo('location');
+      }
+    }
+    // Handle questions about people
+    else if (command.contains('who') || command.contains('person') || 
+             command.contains('people') || command.contains('kaun') ||
+             command.contains('log') || command.contains('aadmi')) {
+      
+      _analyzeSpecificInfo('people');
+    }
+    // Handle hazard questions
+    else if (command.contains('hazard') || command.contains('danger') || 
+             command.contains('safe') || command.contains('khatra')) {
+      
+      _analyzeSpecificInfo('hazards');
+    }
+    // Handle location/setting questions
+    else if (command.contains('where') || command.contains('place') || 
+             command.contains('location') || command.contains('kahan') ||
+             command.contains('jagah')) {
+      
+      _analyzeSpecificInfo('location');
+    }
+    else if (command.contains('stop') || command.contains('cancel') || 
+             command.contains('ruko') || command.contains('band karo')) {
+      
+      // Stop scanning/speaking
+      if (_isScanning) {
+        _toggleScanning();
+      }
+      if (_isSpeaking) {
+        _flutterTts?.stop();
+        setState(() {
+          _isSpeaking = false;
+        });
+      }
+    }
+    else if (command.contains('live') || command.contains('live mode') || 
+             command.contains('start live') || command.contains('live scan')) {
+      
+      // Start live mode
+      if (!_isLiveMode) {
+        _toggleMode();
+      }
+      if (!_isScanning) {
+        _toggleScanning();
+      }
+    }
+    else if (command.contains('single') || command.contains('single scan') || 
+             command.contains('once')) {
+      
+      // Switch to single scan mode
+      if (_isLiveMode) {
+        _toggleMode();
+      }
+      _generateDescription();
+    }
+    // If no specific command is recognized but it sounds like a question
+    // (ends with a question word or has question structure)
+    else if (command.contains('?') || command.contains('kya') || 
+            command.contains('kaun') || command.contains('kahan') ||
+            command.contains('kitna') || command.contains('kaise') ||
+            command.contains('what') || command.contains('who') ||
+            command.contains('where') || command.contains('when') ||
+            command.contains('how') || command.contains('why')) {
+      
+      // If we have a current scene, navigate to question screen
+      final provider = Provider.of<SceneDescriptionProvider>(context, listen: false);
+      if (provider.currentScene != null) {
+        _navigateToQuestionScreen(provider.currentScene!.id);
+        
+        // Show a message that they can ask the question in the question screen
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please ask your question in the question screen'),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        // If no scene yet, generate one first
+        _generateDescription();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -266,6 +466,14 @@ class _SceneDescriptionScreenState extends State<SceneDescriptionScreen> with Si
       appBar: AppBar(
         title: const Text('Scene Description'),
         actions: [
+          IconButton(
+            icon: Icon(_isListeningForVoiceCommand ? Icons.mic_off : Icons.mic),
+            tooltip: 'Voice commands',
+            color: _isListeningForVoiceCommand ? Colors.red : null,
+            onPressed: _isListeningForVoiceCommand 
+                ? _stopListeningForVoiceCommand 
+                : _startListeningForVoiceCommand,
+          ),
           IconButton(
             icon: const Icon(Icons.history),
             onPressed: () {

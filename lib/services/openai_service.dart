@@ -169,9 +169,25 @@ class OpenAIService {
     try {
       final apiKey = await getApiKey() ?? _apiKey;
       
+      // Get language preference
+      final prefs = await SharedPreferences.getInstance();
+      String languageCode = prefs.getString('tts_language') ?? 'en-US';
+      
       // Convert image to base64
       final bytes = await imageFile.readAsBytes();
       final base64Image = base64Encode(bytes);
+      
+      if (kDebugMode) {
+        print('Making question API request for language: $languageCode');
+      }
+      
+      // Determine system prompt based on language preference
+      String systemPrompt;
+      if (languageCode == 'hi-IN') {
+        systemPrompt = 'You are a helpful assistant for visually impaired users. Answer questions about the image clearly and concisely. For Hindi language users, respond in Hinglish (mix of Hindi and English) in your response. Do not translate technical terms to pure Hindi, keep them in English. Be conversational and natural.';
+      } else {
+        systemPrompt = 'You are a helpful assistant for visually impaired users. Answer questions about the image clearly and concisely.';
+      }
       
       final response = await http.post(
         Uri.parse(_baseUrl),
@@ -184,7 +200,7 @@ class OpenAIService {
           'messages': [
             {
               'role': 'system',
-              'content': 'You are a helpful assistant for visually impaired users. Answer questions about the image clearly and concisely.'
+              'content': systemPrompt
             },
             {
               'role': 'user',
