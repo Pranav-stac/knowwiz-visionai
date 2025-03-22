@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import '../../models/scene_description.dart';
 import '../../providers/scene_description_provider.dart';
 import '../../widgets/custom_text_field.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:speech_to_text/speech_recognition_result.dart';
 
 class SceneQuestionScreen extends StatefulWidget {
   final String sceneId;
@@ -18,6 +20,11 @@ class _SceneQuestionScreenState extends State<SceneQuestionScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _isSending = false;
   
+  // Speech to text variables
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
+  bool _speechAvailable = false;
+  
   @override
   void initState() {
     super.initState();
@@ -26,12 +33,75 @@ class _SceneQuestionScreenState extends State<SceneQuestionScreen> {
       final provider = Provider.of<SceneDescriptionProvider>(context, listen: false);
       provider.setCurrentScene(widget.sceneId);
     });
+    
+    // Initialize speech to text
+    _speech = stt.SpeechToText();
+    _initSpeech();
+  }
+  
+  // Initialize speech recognition
+  void _initSpeech() async {
+    _speechAvailable = await _speech.initialize(
+      onStatus: (status) => print('Speech recognition status: $status'),
+      onError: (error) => print('Speech recognition error: $error'),
+    );
+    setState(() {});
+  }
+  
+  // Start listening for speech
+  void _startListening() async {
+    if (!_speechAvailable) {
+      print('Speech recognition not available');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Speech recognition not available on this device'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    
+    setState(() {
+      _isListening = true;
+    });
+    
+    await _speech.listen(
+      onResult: _onSpeechResult,
+      listenFor: const Duration(seconds: 10),
+      pauseFor: const Duration(seconds: 5),
+      partialResults: true,
+      localeId: 'en_US', // Use device language by default
+    );
+  }
+  
+  // Stop listening for speech
+  void _stopListening() async {
+    await _speech.stop();
+    setState(() {
+      _isListening = false;
+    });
+  }
+  
+  // Handle speech recognition results
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    setState(() {
+      _questionController.text = result.recognizedWords;
+    });
+    
+    // If we're done listening and have a final result, automatically submit
+    if (result.finalResult && _questionController.text.isNotEmpty) {
+      // Give a small delay before automatically submitting
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _askQuestion();
+      });
+    }
   }
   
   @override
   void dispose() {
     _questionController.dispose();
     _scrollController.dispose();
+    _speech.stop();
     super.dispose();
   }
   
@@ -243,37 +313,38 @@ class _SceneQuestionScreenState extends State<SceneQuestionScreen> {
                     Expanded(
                       child: CustomTextField(
                         controller: _questionController,
-                        hintText: 'Ask a question about this scene...',
+                        hintText: _isListening 
+                          ? 'Listening...' 
+                          : 'Ask a question about this scene...',
                         labelText: 'Question',
                         prefixIcon: Icons.question_answer,
-                        enabled: !isLoading && !_isSending,
+                        enabled: !isLoading && !_isSending && !_isListening,
                         onSubmitted: (_) => _askQuestion(),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: colorScheme.primary,
-                        shape: BoxShape.circle,
+                    // Microphone button
+                    IconButton(
+                      onPressed: !isLoading && !_isSending
+                          ? (_isListening ? _stopListening : _startListening)
+                          : null,
+                      icon: Icon(
+                        _isListening ? Icons.mic_off : Icons.mic,
+                        color: _isListening 
+                          ? Colors.red 
+                          : colorScheme.primary,
                       ),
-                      child: IconButton(
-                        icon: _isSending
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.send,
-                                color: Colors.white,
-                              ),
-                        onPressed: isLoading || _isSending ? null : _askQuestion,
-                      ),
+                      tooltip: _isListening 
+                        ? 'Stop listening' 
+                        : 'Ask with voice',
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: (_questionController.text.isNotEmpty && !isLoading && !_isSending && !_isListening)
+                          ? _askQuestion
+                          : null,
+                      icon: const Icon(Icons.send),
+                      color: colorScheme.primary,
                     ),
                   ],
                 ),

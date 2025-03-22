@@ -130,7 +130,10 @@ class SceneDescriptionProvider with ChangeNotifier {
       
       if (result['success']) {
         // Update the current scene with the analysis result
-        _currentScene = _currentScene!.addAnalysisResult(infoType, result['analysis']);
+        // Check for 'answer' key first (new API format), then fallback to 'analysis' (old format)
+        final analysisText = result['answer'] ?? result['analysis'] ?? 'No analysis available';
+        
+        _currentScene = _currentScene!.addAnalysisResult(infoType, analysisText);
         
         // Update scene in history
         final index = _sceneHistory.indexWhere((scene) => scene.id == _currentScene!.id);

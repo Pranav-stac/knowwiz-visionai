@@ -74,7 +74,7 @@ dependencies:
   
   # Accessibility
   flutter_tts: ^3.8.3
-  speech_to_text: ^6.4.1
+  speech_to_text: ^7.0.0
   
   # AR/VR
   arkit_plugin: ^1.0.7

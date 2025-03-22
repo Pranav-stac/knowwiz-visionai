@@ -63,6 +63,10 @@ class OpenAIService {
     try {
       final apiKey = await getApiKey() ?? _apiKey;
       
+      // Get language preference
+      final prefs = await SharedPreferences.getInstance();
+      String languageCode = prefs.getString('tts_language') ?? 'en-US';
+      
       // Convert image to base64
       final bytes = await imageFile.readAsBytes();
       final base64Image = base64Encode(bytes);
@@ -70,6 +74,23 @@ class OpenAIService {
       // Log request details for debugging
       if (kDebugMode) {
         print('Making OpenAI API request to: $_baseUrl');
+        print('User language preference: $languageCode');
+      }
+      
+      // Adjust system prompt based on language preference
+      String systemPrompt;
+      if (languageCode == 'hi-IN') {
+        systemPrompt = 'You are a helpful assistant for visually impaired users. Describe the image in detail, focusing on important elements, spatial layout, text content, people, and potential hazards. For Hindi language users, use Hinglish (mix of Hindi and English) in your response. Do not translate technical terms to pure Hindi, keep them in English. Your description should be clear, concise, and informative.';
+      } else {
+        systemPrompt = 'You are a helpful assistant for visually impaired users. Describe the image in detail, focusing on important elements, spatial layout, text content, people, and potential hazards. Your description should be clear, concise, and informative.';
+      }
+      
+      // Adjust user prompt based on language preference
+      String userPrompt;
+      if (languageCode == 'hi-IN') {
+        userPrompt = 'Is image ka description Hinglish mein batao (Hindi-English mix). Jo dekh raha hai uska short description do.';
+      } else {
+        userPrompt = 'Describe this image in short for someone who cannot see it.';
       }
       
       final response = await http.post(
@@ -83,14 +104,14 @@ class OpenAIService {
           'messages': [
             {
               'role': 'system',
-              'content': 'You are a helpful assistant for visually impaired users. Describe the image in detail, focusing on important elements, spatial layout, text content, people, and potential hazards. Your description should be clear, concise, and informative.'
+              'content': systemPrompt
             },
             {
               'role': 'user',
               'content': [
                 {
                   'type': 'text',
-                  'text': 'Describe this image in short for someone who cannot see it.'
+                  'text': userPrompt
                 },
                 {
                   'type': 'image_url',
@@ -214,26 +235,59 @@ class OpenAIService {
     try {
       final apiKey = await getApiKey() ?? _apiKey;
       
+      // Get language preference
+      final prefs = await SharedPreferences.getInstance();
+      String languageCode = prefs.getString('tts_language') ?? 'en-US';
+      
       // Convert image to base64
       final bytes = await imageFile.readAsBytes();
       final base64Image = base64Encode(bytes);
       
       String prompt;
-      switch (infoType) {
-        case 'text':
-          prompt = 'Extract and list all text visible in this image. If no text is visible, state that clearly.';
-          break;
-        case 'people':
-          prompt = 'Describe the people in this image, including their approximate positions, what they\'re doing, and any other notable details. If no people are visible, state that clearly.';
-          break;
-        case 'hazards':
-          prompt = 'Identify any potential hazards or obstacles in this scene for a visually impaired person. Consider uneven surfaces, steps, barriers, moving objects, etc. If no hazards are apparent, state that clearly.';
-          break;
-        case 'location':
-          prompt = 'Describe the location or setting shown in this image as specifically as possible. Include details about whether it appears to be indoor/outdoor, public/private, etc.';
-          break;
-        default:
-          prompt = 'Describe this image in detail, focusing on important elements.';
+      if (languageCode == 'hi-IN') {
+        // Hinglish prompts
+        switch (infoType) {
+          case 'text':
+            prompt = 'Is image mein dikhne wale saare text ko extract karke batao. Agar koi text nahi hai, to woh bhi batao.';
+            break;
+          case 'people':
+            prompt = 'Is image mein mojood logon ka description do, unki position, kya kar rahe hain, aur koi aur important details. Agar koi log nahi dikhte, to woh batao.';
+            break;
+          case 'hazards':
+            prompt = 'Is scene mein ek visually impaired person ke liye koi potential hazards ya obstacles identify karo. Uneven surfaces, steps, barriers, moving objects, etc par dhyan do. Agar koi hazards nahi hai, to woh batao.';
+            break;
+          case 'location':
+            prompt = 'Is image mein dikhai de rahi location ya setting ka description do. Indoor/outdoor, public/private, etc. jaisi details include karo.';
+            break;
+          default:
+            prompt = 'Is image ka detailed description Hinglish mein batao, important elements par focus karte hue.';
+        }
+      } else {
+        // English prompts (original)
+        switch (infoType) {
+          case 'text':
+            prompt = 'Extract and list all text visible in this image. If no text is visible, state that clearly.';
+            break;
+          case 'people':
+            prompt = 'Describe the people in this image, including their approximate positions, what they\'re doing, and any other notable details. If no people are visible, state that clearly.';
+            break;
+          case 'hazards':
+            prompt = 'Identify any potential hazards or obstacles in this scene for a visually impaired person. Consider uneven surfaces, steps, barriers, moving objects, etc. If no hazards are apparent, state that clearly.';
+            break;
+          case 'location':
+            prompt = 'Describe the location or setting shown in this image as specifically as possible. Include details about whether it appears to be indoor/outdoor, public/private, etc.';
+            break;
+          default:
+            prompt = 'Describe this image in detail, focusing on important elements.';
+        }
+      }
+      
+      // Create appropriate system prompt based on language
+      String systemPrompt;
+      if (languageCode == 'hi-IN') {
+        systemPrompt = 'You are a helpful assistant for visually impaired users. Provide clear, accurate, and concise information. For Hindi language users, use Hinglish (mix of Hindi and English) in your response. Do not translate technical terms to pure Hindi, keep them in English.';
+      } else {
+        systemPrompt = 'You are a helpful assistant for visually impaired users. Provide clear, accurate, and concise information.';
       }
       
       final response = await http.post(
@@ -247,7 +301,7 @@ class OpenAIService {
           'messages': [
             {
               'role': 'system',
-              'content': 'You are a helpful assistant for visually impaired users. Provide clear, accurate, and concise information.'
+              'content': systemPrompt
             },
             {
               'role': 'user',
@@ -271,12 +325,11 @@ class OpenAIService {
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final analysis = data['choices'][0]['message']['content'];
+        final answer = data['choices'][0]['message']['content'];
         
         return {
           'success': true,
-          'analysis': analysis,
-          'type': infoType,
+          'answer': answer,
         };
       } else {
         return {
@@ -288,7 +341,7 @@ class OpenAIService {
     } catch (e) {
       return {
         'success': false,
-        'error': 'Error analyzing scene',
+        'error': 'Error analyzing scene for specific info',
         'details': e.toString(),
       };
     }
