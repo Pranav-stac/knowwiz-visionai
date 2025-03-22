@@ -13,7 +13,7 @@ class ImageCaptioningScreen extends StatefulWidget {
   State<ImageCaptioningScreen> createState() => _ImageCaptioningScreenState();
 }
 
-class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
+class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with WidgetsBindingObserver {
   bool _isListening = false;
   final List<CaptionItem> _captions = [];
   final ScrollController _scrollController = ScrollController();
@@ -28,10 +28,22 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
   String? _generatedImageUrl;
   bool _isGeneratingImage = false;
   String _lastProcessedText = '';
+  
+  // Continuous streaming variables
+  Timer? _streamProcessTimer;
+  int _minWordsForProcessing = 2;
+  int _streamProcessDelay = 1000; // milliseconds
+  
+  // Reliability tracking
+  int _restartAttempts = 0;
+  static const int _maxRestartAttempts = 3;
+  DateTime? _lastRestartTime;
 
   @override
   void initState() {
     super.initState();
+    // Add app lifecycle observer
+    WidgetsBinding.instance.addObserver(this);
     // Initialize speech recognition
     _speech = stt.SpeechToText();
     _initSpeech();
@@ -40,18 +52,120 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _speech.stop();
     _scrollController.dispose();
+    _streamProcessTimer?.cancel();
+    _listeningMonitorTimer?.cancel();
+    _backupTimer?.cancel();
     super.dispose();
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Handle app being paused or resumed
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      if (_isListening) {
+        _stopListening();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      if (_isListening) {
+        _startListening();
+      }
+    }
   }
   
   // Initialize speech recognition
   void _initSpeech() async {
     _speechAvailable = await _speech.initialize(
-      onStatus: (status) => print('Speech recognition status: $status'),
-      onError: (error) => print('Speech recognition error: $error'),
+      onStatus: (status) {
+        print('Speech recognition status: $status');
+        if (status == 'done' || status == 'notListening') {
+          if (_isListening) {
+            // Always restart if we're still supposed to be listening
+            print('Status shows speech ended but we want to keep listening');
+            _forceRestart();
+          }
+        }
+      },
+      onError: (errorNotification) {
+        print('Speech recognition error: ${errorNotification.errorMsg}, permanent: ${errorNotification.permanent}');
+        
+        // Any error while listening means we need to restart
+        if (_isListening) {
+          print('Handling speech error with restart');
+          _forceRestart();
+        }
+      },
     );
     setState(() {});
+  }
+  
+  // Force a complete restart of speech recognition 
+  void _forceRestart() {
+    // Cancel existing timers first
+    _backupTimer?.cancel();
+    _listeningMonitorTimer?.cancel();
+    
+    // If we've been restarting too frequently, take a longer pause
+    final now = DateTime.now();
+    final bool tooFrequent = _lastRestartTime != null && 
+                         now.difference(_lastRestartTime!).inMilliseconds < 1000;
+    
+    final delay = tooFrequent ? 1200 : 300;
+    
+    print('Forcing restart with ${delay}ms delay (too frequent: $tooFrequent)');
+    _lastRestartTime = now;
+    
+    Future.delayed(Duration(milliseconds: delay), () {
+      if (!_isListening) return; // Check if user stopped listening
+      
+      // Ensure speech is stopped before restarting
+      _speech.stop().then((_) {
+        // Small additional pause after stop
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (_isListening) {
+            _startSpeechRecognition();
+          }
+        });
+      }).catchError((e) {
+        print('Error stopping speech for restart: $e');
+        // Try anyway after a short delay
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (_isListening) {
+            _startSpeechRecognition();
+          }
+        });
+      });
+    });
+  }
+  
+  // Start listening without changing _isListening state
+  void _startSpeechRecognition() {
+    try {
+      print('Starting fresh speech recognition');
+      _speech.listen(
+        onResult: _onSpeechResult,
+        listenFor: const Duration(seconds: 20), // Shorter sessions to allow more frequent restarts
+        pauseFor: const Duration(seconds: 2),
+        partialResults: true,
+        localeId: _speechLocale,
+        listenMode: stt.ListenMode.dictation,
+        cancelOnError: false,
+      );
+      
+      // Set up monitoring to detect if speech stops
+      _createListeningMonitor();
+      
+    } catch (e) {
+      print('Error in _startSpeechRecognition: $e');
+      // Try to restart after a delay
+      Future.delayed(const Duration(seconds: 1), () {
+        if (_isListening) {
+          _forceRestart();
+        }
+      });
+    }
   }
   
   // Load user preferences
@@ -59,6 +173,9 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _speechLocale = prefs.getString('speech_locale') ?? 'en_US';
+      // Load user preference for word count if available
+      _minWordsForProcessing = prefs.getInt('min_words_for_processing') ?? 2;
+      _streamProcessDelay = prefs.getInt('stream_process_delay') ?? 1000;
     });
   }
 
@@ -67,9 +184,14 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
       _stopListening();
     } else {
       _startListening();
+      // Reset restart attempts
+      _restartAttempts = 0;
     }
   }
 
+  // Timer for backup listening check
+  Timer? _backupTimer;
+  
   void _startListening() async {
     if (!_speechAvailable) {
       print('Speech recognition not available');
@@ -82,47 +204,136 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
       return;
     }
     
+    // Cancel any existing timers
+    _streamProcessTimer?.cancel();
+    _listeningMonitorTimer?.cancel();
+    _backupTimer?.cancel();
+    
     setState(() {
       _isListening = true;
       _currentVoiceText = '';
+      _restartAttempts = 0;  // Reset restart counter
     });
     
-    await _speech.listen(
-      onResult: _onSpeechResult,
-      listenFor: const Duration(seconds: 30),
-      pauseFor: const Duration(seconds: 3),
-      partialResults: true,
-      localeId: _speechLocale,
-      listenMode: stt.ListenMode.confirmation,
+    // Setup timer for continuous processing
+    _streamProcessTimer = Timer.periodic(
+      Duration(milliseconds: _streamProcessDelay), 
+      (timer) {
+        _processCurrentSpeechStream();
+      }
     );
+    
+    // Create a backup timer that keeps checking if we need to restart
+    _backupTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (timer) {
+        if (_isListening && !_speech.isListening) {
+          print('Backup timer detected speech not listening');
+          _forceRestart();
+        }
+      }
+    );
+    
+    // Start speech recognition
+    _startSpeechRecognition();
   }
   
   void _stopListening() async {
-    await _speech.stop();
+    _streamProcessTimer?.cancel();
+    _listeningMonitorTimer?.cancel();
+    _backupTimer?.cancel();
+    
     setState(() {
       _isListening = false;
     });
+    
+    try {
+      await _speech.stop();
+      print('Stopped listening successfully');
+    } catch (e) {
+      print('Error stopping speech recognition: $e');
+    }
+    
+    // Process one last time if needed
+    if (_currentVoiceText.isNotEmpty && _currentVoiceText != _lastProcessedText) {
+      _generateImageFromText(_currentVoiceText);
+    }
+  }
+  
+  // Process speech text during streaming
+  void _processCurrentSpeechStream() {
+    if (!_isListening || _currentVoiceText.isEmpty || _isGeneratingImage) {
+      return;
+    }
+    
+    // Count words to ensure we have enough content
+    final wordCount = _currentVoiceText.trim().split(' ').where((word) => word.isNotEmpty).length;
+    
+    // Only process if we have new content and enough words
+    if (_currentVoiceText != _lastProcessedText && wordCount >= _minWordsForProcessing) {
+      print('Processing stream text: "$_currentVoiceText"');
+      _generateImageFromText(_currentVoiceText);
+      
+      // Add to captions for real-time feedback
+      _captions.add(
+        CaptionItem(
+          text: _currentVoiceText,
+          timestamp: DateTime.now(),
+          speaker: 'User',
+          isPartial: true,
+        ),
+      );
+      
+      _lastProcessedText = _currentVoiceText;
+      _scrollToBottom();
+    }
   }
   
   // Handle speech recognition results
   void _onSpeechResult(SpeechRecognitionResult result) {
+    // Check if we're still supposed to be listening. If not, ignore the result
+    if (!_isListening) return;
+    
     setState(() {
       _currentVoiceText = result.recognizedWords;
       
       // Add a new caption if this is a final result
       if (result.finalResult) {
+        // Process the final result only if we have recognizable text
         if (_currentVoiceText.isNotEmpty) {
-          _captions.add(
-            CaptionItem(
+          // Update the last caption if it was partial with the same text
+          bool updatedExisting = false;
+          if (_captions.isNotEmpty && _captions.last.isPartial && 
+              _captions.last.text.trim() == _currentVoiceText.trim()) {
+            final updatedList = List<CaptionItem>.from(_captions);
+            updatedList[updatedList.length - 1] = CaptionItem(
               text: _currentVoiceText,
               timestamp: DateTime.now(),
               speaker: 'User',
-            ),
-          );
+              isPartial: false,
+            );
+            _captions.clear();
+            _captions.addAll(updatedList);
+            updatedExisting = true;
+          }
           
-          // Generate image from the final text
-          _generateImageFromText(_currentVoiceText);
-          _lastProcessedText = _currentVoiceText;
+          // Only add new caption if we didn't update an existing one
+          if (!updatedExisting) {
+            _captions.add(
+              CaptionItem(
+                text: _currentVoiceText,
+                timestamp: DateTime.now(),
+                speaker: 'User',
+                isPartial: false,
+              ),
+            );
+          }
+          
+          // Generate image from the final text if it hasn't been processed already
+          if (_currentVoiceText != _lastProcessedText) {
+            _generateImageFromText(_currentVoiceText);
+            _lastProcessedText = _currentVoiceText;
+          }
           
           // Auto-scroll to the bottom
           _scrollToBottom();
@@ -130,11 +341,17 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
           // Reset for the next utterance but continue listening
           _currentVoiceText = '';
           
-          // Restart listening if we're still in listening mode
-          if (_isListening && !_speech.isListening) {
-            _startListening();
-          }
+          print('Final result processed, ensuring recognition continues');
         }
+        
+        // Android issue: final result often stops recognition despite cancelOnError:false
+        // Check if we're still listening and restart if not
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (_isListening && !_speech.isListening) {
+            print('Recognition stopped after final result, restarting');
+            _forceRestart();
+          }
+        });
       }
     });
   }
@@ -148,6 +365,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
     });
     
     try {
+      print('Generating image for text: "$text"');
       final response = await http.post(
         Uri.parse("https://pranavai.onrender.com/generate"),
         headers: {'Content-Type': 'application/json'},
@@ -220,18 +438,22 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
         currentLanguage = name;
       }
     });
+
+    // Settings for streaming parameters
+    int wordCount = _minWordsForProcessing;
+    int delayMs = _streamProcessDelay;
     
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: const Text('Language Settings'),
+            title: const Text('Settings'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Select Recognition Language:'),
+                const Text('Recognition Language:'),
                 const SizedBox(height: 8),
                 DropdownButton<String>(
                   value: currentLanguage,
@@ -250,6 +472,37 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
                     }
                   },
                 ),
+                const SizedBox(height: 16),
+                const Text('Minimum Words For Processing:'),
+                Slider(
+                  value: wordCount.toDouble(),
+                  min: 1,
+                  max: 5,
+                  divisions: 4,
+                  label: wordCount.toString(),
+                  onChanged: (value) {
+                    setState(() {
+                      wordCount = value.round();
+                    });
+                  },
+                ),
+                Text('Process after ${wordCount.toString()} words'),
+                
+                const SizedBox(height: 16),
+                const Text('Processing Delay (ms):'),
+                Slider(
+                  value: delayMs.toDouble(),
+                  min: 500,
+                  max: 2000,
+                  divisions: 6,
+                  label: delayMs.toString(),
+                  onChanged: (value) {
+                    setState(() {
+                      delayMs = value.round();
+                    });
+                  },
+                ),
+                Text('Check every ${(delayMs / 1000).toStringAsFixed(1)} seconds'),
               ],
             ),
             actions: [
@@ -261,16 +514,29 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
                 onPressed: () async {
                   final code = languageOptions[currentLanguage] ?? 'en_US';
                   await prefs.setString('speech_locale', code);
+                  await prefs.setInt('min_words_for_processing', wordCount);
+                  await prefs.setInt('stream_process_delay', delayMs);
                   
                   if (mounted) {
                     setState(() {
                       _speechLocale = code;
+                      _minWordsForProcessing = wordCount;
+                      _streamProcessDelay = delayMs;
                     });
                     Navigator.pop(context);
                     
+                    // Update timer if it's running
+                    if (_streamProcessTimer != null && _streamProcessTimer!.isActive) {
+                      _streamProcessTimer!.cancel();
+                      _streamProcessTimer = Timer.periodic(
+                        Duration(milliseconds: delayMs), 
+                        (timer) => _processCurrentSpeechStream()
+                      );
+                    }
+                    
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Language settings saved'),
+                        content: Text('Settings saved'),
                         behavior: SnackBarBehavior.floating,
                       ),
                     );
@@ -285,6 +551,22 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
     );
   }
 
+  // Timer to monitor if listening stopped unexpectedly
+  Timer? _listeningMonitorTimer;
+  
+  void _createListeningMonitor() {
+    // Cancel any existing timer
+    _listeningMonitorTimer?.cancel();
+    
+    // Check more frequently if we're still listening
+    _listeningMonitorTimer = Timer.periodic(const Duration(milliseconds: 750), (timer) {
+      if (_isListening && !_speech.isListening) {
+        print('Monitor detected listening stopped unexpectedly');
+        _forceRestart();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -292,7 +574,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Image Captioning'),
+        title: const Text('Speech to Image'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -318,10 +600,47 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
               ),
               child: Column(
                 children: [
+                  // Speech status indicator
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: _isListening 
+                          ? Colors.green.withOpacity(0.1)
+                          : Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: _isListening 
+                            ? Colors.green.withOpacity(0.3)
+                            : Colors.grey.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _isListening ? Icons.mic : Icons.mic_off,
+                          size: 16,
+                          color: _isListening ? Colors.green : Colors.grey,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _isListening ? 'Listening continuously' : 'Microphone off',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _isListening ? Colors.green : Colors.grey,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
                   // Generated Image Section
                   if (_generatedImageUrl != null || _isGeneratingImage)
                     Container(
-                      height: 200,
+                      height: 250, // Increased height 
                       width: double.infinity,
                       margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
@@ -345,9 +664,10 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
                                   const CircularProgressIndicator(),
                                   const SizedBox(height: 16),
                                   Text(
-                                    'Generating image...',
+                                    'Creating your image...',
                                     style: TextStyle(
-                                      fontSize: 14,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w500,
                                       color: Colors.grey[600],
                                     ),
                                   ),
@@ -379,7 +699,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
                               ),
                               const SizedBox(height: 16),
                               Text(
-                                'Tap the microphone button to start captioning',
+                                'Tap the microphone and start describing an image',
                                 style: TextStyle(
                                   fontSize: 16,
                                   color: Colors.grey[600],
@@ -388,7 +708,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Images will be generated from your speech',
+                                'Images will be generated in real-time as you speak',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.grey[600],
@@ -404,21 +724,22 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
                           padding: const EdgeInsets.only(bottom: 16),
                           itemBuilder: (context, index) {
                             final caption = _captions[index];
-                            final isCurrentUser = caption.speaker == 'User';
+                            // Alternate sides based on index
+                            final isLeftSide = index % 2 == 0;
                             
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 16),
                               child: Row(
-                                mainAxisAlignment: isCurrentUser
-                                    ? MainAxisAlignment.end
-                                    : MainAxisAlignment.start,
+                                mainAxisAlignment: isLeftSide
+                                    ? MainAxisAlignment.start
+                                    : MainAxisAlignment.end,
                                 children: [
-                                  if (!isCurrentUser)
+                                  if (isLeftSide)
                                     CircleAvatar(
                                       backgroundColor: Colors.blue[100],
                                       radius: 16,
                                       child: Text(
-                                        caption.speaker[0],
+                                        '${index + 1}',
                                         style: TextStyle(
                                           color: Colors.blue[800],
                                           fontSize: 12,
@@ -434,11 +755,9 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
                                         vertical: 12,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: isCurrentUser
-                                            ? colorScheme.primary
-                                            : theme.brightness == Brightness.light
-                                                ? Colors.white
-                                                : Colors.grey[800],
+                                        color: isLeftSide
+                                            ? Colors.blue[50]
+                                            : Colors.green[50],
                                         borderRadius: BorderRadius.circular(20),
                                         boxShadow: [
                                           BoxShadow(
@@ -447,6 +766,14 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
                                             offset: const Offset(0, 2),
                                           ),
                                         ],
+                                        // Add a special border for partial results
+                                        border: caption.isPartial
+                                            ? Border.all(
+                                                color: Colors.grey.withOpacity(0.3),
+                                                width: 1,
+                                                style: BorderStyle.solid,
+                                              )
+                                            : null,
                                       ),
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -455,34 +782,58 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
                                             caption.text,
                                             style: TextStyle(
                                               fontSize: 16,
-                                              color: isCurrentUser
-                                                  ? colorScheme.onPrimary
-                                                  : theme.brightness == Brightness.light
-                                                      ? Colors.black
-                                                      : Colors.white,
+                                              color: isLeftSide
+                                                  ? Colors.blue[800]
+                                                  : Colors.green[800],
+                                              fontStyle: caption.isPartial
+                                                  ? FontStyle.italic
+                                                  : FontStyle.normal,
                                             ),
                                           ),
                                           const SizedBox(height: 4),
-                                          Text(
-                                            _formatTime(caption.timestamp),
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: isCurrentUser
-                                                  ? colorScheme.onPrimary.withOpacity(0.7)
-                                                  : Colors.grey[600],
-                                            ),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                _formatTime(caption.timestamp),
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                              if (caption.isPartial) ...[
+                                                const SizedBox(width: 4),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 6, 
+                                                    vertical: 2
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.grey[200],
+                                                    borderRadius: BorderRadius.circular(10),
+                                                  ),
+                                                  child: Text(
+                                                    'processing',
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      color: Colors.grey[600],
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
                                           ),
                                         ],
                                       ),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  if (isCurrentUser)
+                                  if (!isLeftSide)
                                     CircleAvatar(
                                       backgroundColor: Colors.green[100],
                                       radius: 16,
                                       child: Text(
-                                        caption.speaker[0],
+                                        '${index + 1}',
                                         style: TextStyle(
                                           color: Colors.green[800],
                                           fontSize: 12,
@@ -611,7 +962,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> {
                 // Status Text
                 Text(
                   _isListening
-                      ? 'Listening... Tap to stop'
+                      ? 'Listening & generating in real-time...'
                       : 'Tap to start listening',
                   style: TextStyle(
                     fontSize: 14,
@@ -637,10 +988,12 @@ class CaptionItem {
   final String text;
   final DateTime timestamp;
   final String speaker;
+  final bool isPartial;
 
   CaptionItem({
     required this.text,
     required this.timestamp,
     required this.speaker,
+    this.isPartial = false,
   });
 } 

@@ -194,7 +194,7 @@ class HomeContent extends StatelessWidget {
                   _buildQuickActionCard(
                     context,
                     icon: Icons.image,
-                    title: 'Speech to Image',
+                    title: 'Realtime Captioning',
                     color: Colors.amber,
                     onTap: () {
                       Navigator.push(
@@ -273,22 +273,9 @@ class HomeContent extends StatelessWidget {
                 mainAxisSpacing: 16,
                 childAspectRatio: 0.9,
                 children: [
+           
                   FeatureCard(
-                    title: 'Real-Time Captioning',
-                    description: 'Convert speech to text instantly',
-                    icon: Icons.closed_caption,
-                    color: Colors.blue,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const CaptioningScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  FeatureCard(
-                    title: 'Speech to Image',
+                    title: 'Realtime Captioning',
                     description: 'Generate images from speech',
                     icon: Icons.image,
                     color: Colors.amber,
