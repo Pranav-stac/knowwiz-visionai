@@ -38,6 +38,9 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
   int _restartAttempts = 0;
   static const int _maxRestartAttempts = 3;
   DateTime? _lastRestartTime;
+  
+  // New variables for the improved restart strategy
+  bool _restartPending = false;
 
   @override
   void initState() {
@@ -82,23 +85,58 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
         print('Speech recognition status: $status');
         if (status == 'done' || status == 'notListening') {
           if (_isListening) {
-            // Always restart if we're still supposed to be listening
-            print('Status shows speech ended but we want to keep listening');
-            _forceRestart();
+            // Only attempt restart if we're not already in the middle of a restart
+            if (_lastRestartTime == null || 
+                DateTime.now().difference(_lastRestartTime!).inMilliseconds > 1500) {
+              print('Status shows speech ended but we want to keep listening - scheduling restart');
+              _scheduleRestart(500); // Use a moderate delay before restart
+            } else {
+              print('Ignoring status event as we recently tried to restart');
+            }
           }
         }
       },
       onError: (errorNotification) {
         print('Speech recognition error: ${errorNotification.errorMsg}, permanent: ${errorNotification.permanent}');
         
-        // Any error while listening means we need to restart
+        // Improve error handling based on error type
         if (_isListening) {
-          print('Handling speech error with restart');
-          _forceRestart();
+          // Don't restart for permanent errors repeatedly
+          if (errorNotification.permanent) {
+            if (_restartAttempts >= _maxRestartAttempts) {
+              print('Too many permanent errors, temporarily pausing restarts');
+              
+              // Schedule a delayed restart with increasing backoff
+              int delayMs = 2000 + (_restartAttempts * 500);
+              _scheduleRestart(delayMs);
+              return;
+            }
+          }
+          
+          // Handle network or temporary errors with shorter delays
+          int delayMs = errorNotification.permanent ? 1200 : 500;
+          _scheduleRestart(delayMs);
         }
       },
     );
     setState(() {});
+  }
+  
+  // Schedule a restart with specific delay and tracking
+  void _scheduleRestart(int delayMs) {
+    // Check if we already have a pending restart
+    if (_restartPending) {
+      print('Restart already pending, ignoring new request');
+      return;
+    }
+    
+    _restartPending = true;
+    print('Scheduling restart in ${delayMs}ms (attempt #${_restartAttempts + 1})');
+    
+    Future.delayed(Duration(milliseconds: delayMs), () {
+      _forceRestart();
+      _restartPending = false;
+    });
   }
   
   // Force a complete restart of speech recognition 
@@ -107,35 +145,67 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     _backupTimer?.cancel();
     _listeningMonitorTimer?.cancel();
     
-    // If we've been restarting too frequently, take a longer pause
-    final now = DateTime.now();
-    final bool tooFrequent = _lastRestartTime != null && 
-                         now.difference(_lastRestartTime!).inMilliseconds < 1000;
+    // Track restart attempts
+    _restartAttempts++;
+    _lastRestartTime = DateTime.now();
     
-    final delay = tooFrequent ? 1200 : 300;
+    // If we've been restarting too frequently, use progressive backoff
+    int pauseDuration = 300;
+    if (_restartAttempts > 1) {
+      pauseDuration = 300 * _restartAttempts;
+      if (pauseDuration > 2000) pauseDuration = 2000; // cap at 2 seconds
+    }
     
-    print('Forcing restart with ${delay}ms delay (too frequent: $tooFrequent)');
-    _lastRestartTime = now;
+    print('Forcing restart with ${pauseDuration}ms delay (attempt #$_restartAttempts)');
     
-    Future.delayed(Duration(milliseconds: delay), () {
-      if (!_isListening) return; // Check if user stopped listening
+    // Stop the current speech recognition session
+    _speech.stop().then((_) {
+      // If user has turned off listening during the restart process, don't continue
+      if (!_isListening) {
+        print('User stopped listening during restart, aborting');
+        return;
+      }
       
-      // Ensure speech is stopped before restarting
-      _speech.stop().then((_) {
-        // Small additional pause after stop
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (_isListening) {
-            _startSpeechRecognition();
+      // Small additional pause for the system to clean up
+      Future.delayed(Duration(milliseconds: pauseDuration), () {
+        if (_isListening) {
+          // Reset restart counter if it's been a while since our last restart
+          if (_lastRestartTime != null && 
+              DateTime.now().difference(_lastRestartTime!).inSeconds > 10) {
+            print('Resetting restart attempt counter');
+            _restartAttempts = 0;
           }
-        });
-      }).catchError((e) {
-        print('Error stopping speech for restart: $e');
-        // Try anyway after a short delay
-        Future.delayed(const Duration(milliseconds: 200), () {
-          if (_isListening) {
-            _startSpeechRecognition();
+          
+          // Max restart limit to prevent infinite loops
+          if (_restartAttempts > _maxRestartAttempts * 2) {
+            print('Too many restart attempts, forcing a longer pause');
+            setState(() {
+              _isListening = false;
+            });
+            
+            // Auto-restart after a longer break
+            Future.delayed(const Duration(seconds: 5), () {
+              if (mounted) {
+                setState(() {
+                  _isListening = true;
+                  _restartAttempts = 0;
+                });
+                _startSpeechRecognition();
+              }
+            });
+            return;
           }
-        });
+          
+          _startSpeechRecognition();
+        }
+      });
+    }).catchError((e) {
+      print('Error stopping speech for restart: $e');
+      // Still try to restart after a longer delay
+      Future.delayed(Duration(milliseconds: pauseDuration + 500), () {
+        if (_isListening) {
+          _startSpeechRecognition();
+        }
       });
     });
   }
@@ -146,8 +216,8 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
       print('Starting fresh speech recognition');
       _speech.listen(
         onResult: _onSpeechResult,
-        listenFor: const Duration(seconds: 20), // Shorter sessions to allow more frequent restarts
-        pauseFor: const Duration(seconds: 2),
+        listenFor: const Duration(seconds: 30), // Longer sessions
+        pauseFor: const Duration(seconds: 3),
         partialResults: true,
         localeId: _speechLocale,
         listenMode: stt.ListenMode.dictation,
@@ -162,7 +232,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
       // Try to restart after a delay
       Future.delayed(const Duration(seconds: 1), () {
         if (_isListening) {
-          _forceRestart();
+          _scheduleRestart(1000);
         }
       });
     }
@@ -213,6 +283,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
       _isListening = true;
       _currentVoiceText = '';
       _restartAttempts = 0;  // Reset restart counter
+      _restartPending = false;
     });
     
     // Setup timer for continuous processing
@@ -225,11 +296,11 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     
     // Create a backup timer that keeps checking if we need to restart
     _backupTimer = Timer.periodic(
-      const Duration(seconds: 3),
+      const Duration(seconds: 1), // Check more frequently
       (timer) {
-        if (_isListening && !_speech.isListening) {
+        if (_isListening && !_speech.isListening && !_restartPending) {
           print('Backup timer detected speech not listening');
-          _forceRestart();
+          _scheduleRestart(300); // Quick restart when backup timer detects issue
         }
       }
     );
@@ -344,14 +415,17 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
           print('Final result processed, ensuring recognition continues');
         }
         
-        // Android issue: final result often stops recognition despite cancelOnError:false
-        // Check if we're still listening and restart if not
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (_isListening && !_speech.isListening) {
-            print('Recognition stopped after final result, restarting');
-            _forceRestart();
-          }
-        });
+        // Some Android devices may stop listening after a final result
+        // Only check if not already in the middle of a restart
+        if (!_restartPending) {
+          // Use a short timer to check if speech recognition has actually stopped
+          Future.delayed(const Duration(milliseconds: 200), () {
+            if (_isListening && !_speech.isListening && !_restartPending) {
+              print('Recognition stopped after final result, scheduling restart');
+              _scheduleRestart(500);
+            }
+          });
+        }
       }
     });
   }
@@ -560,9 +634,9 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     
     // Check more frequently if we're still listening
     _listeningMonitorTimer = Timer.periodic(const Duration(milliseconds: 750), (timer) {
-      if (_isListening && !_speech.isListening) {
+      if (_isListening && !_speech.isListening && !_restartPending) {
         print('Monitor detected listening stopped unexpectedly');
-        _forceRestart();
+        _scheduleRestart(500);
       }
     });
   }

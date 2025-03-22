@@ -106,7 +106,7 @@ class _VoiceGenerationScreenState extends State<VoiceGenerationScreen> {
     _flutterTts?.stop();
     super.dispose();
   }
-  
+
   Future<void> _initTts() async {
     _flutterTts = FlutterTts();
     
@@ -162,8 +162,8 @@ class _VoiceGenerationScreenState extends State<VoiceGenerationScreen> {
     // Configure error and completion handlers
     _flutterTts!.setStartHandler(() {
       print('TTS started speaking');
-      setState(() {
-        _isSpeaking = true;
+    setState(() {
+      _isSpeaking = true;
       });
     });
     
@@ -705,7 +705,7 @@ class _VoiceGenerationScreenState extends State<VoiceGenerationScreen> {
       body: Column(
         children: [
           Expanded(
-            child: _isSpeaking
+              child: _isSpeaking
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -732,8 +732,8 @@ class _VoiceGenerationScreenState extends State<VoiceGenerationScreen> {
                       ),
                     ],
                   ),
-                )
-              : Column(
+                  )
+                : Column(
                   children: [
                     // Quick access to favorites
                     if (_favoritePhrases.isNotEmpty)
@@ -825,21 +825,21 @@ class _VoiceGenerationScreenState extends State<VoiceGenerationScreen> {
                     Expanded(
                       child: Center(
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.record_voice_over,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.record_voice_over,
                               size: 60,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 16),
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 32),
                               child: Text(
                                 'Tap a phrase to speak it immediately',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey[600],
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[600],
                                 ),
                                 textAlign: TextAlign.center,
                               ),
@@ -850,15 +850,15 @@ class _VoiceGenerationScreenState extends State<VoiceGenerationScreen> {
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Colors.grey[500],
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
                         ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
                       ),
                     ),
                   ],
-                ),
+            ),
           ),
           Container(
             padding: const EdgeInsets.all(16),
@@ -890,44 +890,44 @@ class _VoiceGenerationScreenState extends State<VoiceGenerationScreen> {
                       tooltip: 'Clear text',
                     ),
                     // Text field
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        decoration: BoxDecoration(
-                          color: theme.brightness == Brightness.light
-                              ? Colors.grey[100]
-                              : Colors.grey[800],
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: TextField(
-                          controller: _textController,
-                          decoration: const InputDecoration(
-                            hintText: 'Type or select a message...',
-                            border: InputBorder.none,
-                          ),
-                          maxLines: 1,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => _speak(),
-                        ),
-                      ),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: theme.brightness == Brightness.light
+                          ? Colors.grey[100]
+                          : Colors.grey[800],
+                      borderRadius: BorderRadius.circular(30),
                     ),
-                    const SizedBox(width: 8),
-                    // Speak button
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: colorScheme.primary,
-                        shape: BoxShape.circle,
+                    child: TextField(
+                      controller: _textController,
+                      decoration: const InputDecoration(
+                            hintText: 'Type or select a message...',
+                        border: InputBorder.none,
                       ),
-                      child: IconButton(
-                        icon: Icon(
-                          _isSpeaking ? Icons.stop : Icons.volume_up,
-                          color: Colors.white,
-                        ),
+                      maxLines: 1,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _speak(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                    // Speak button
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    icon: Icon(
+                      _isSpeaking ? Icons.stop : Icons.volume_up,
+                      color: Colors.white,
+                    ),
                         onPressed: () => _speak(),
                       ),
-                    ),
+                  ),
                   ],
                 ),
                 // Word suggestions will go here in the future
