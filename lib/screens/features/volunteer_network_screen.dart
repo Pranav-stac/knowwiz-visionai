@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:intl/intl.dart';
 
 class VolunteerNetworkScreen extends StatefulWidget {
   const VolunteerNetworkScreen({super.key});
@@ -96,14 +101,82 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
     ),
   ];
 
+  // Firebase related variables
+  final DatabaseReference _database = FirebaseDatabase.instance.ref();
+  
+  // Speech to text variables
+  late stt.SpeechToText _speech;
+  bool _isListening = false;
+  String _transcription = '';
+  final FlutterTts _flutterTts = FlutterTts();
+  
+  // For the help request
+  String _requestTitle = '';
+  List<String> _selectedRequirements = ['Patient'];
+  String _selectedDisabilityType = 'visual_impairment';
+  List<String> _selectedAssistanceTypes = ['reading'];
+  DateTime _dateNeeded = DateTime.now().add(const Duration(days: 3));
+  String _durationNeeded = '1 hour';
+  String _requestLocation = '';
+  String _requestPriority = 'normal';
+  
+  final List<String> _disabilityTypes = [
+    'visual_impairment',
+    'hearing_impairment',
+    'mobility_impairment',
+    'cognitive_impairment',
+    'other'
+  ];
+  
+  final List<String> _assistanceTypes = [
+    'reading',
+    'writing',
+    'interpretation',
+    'navigation',
+    'shopping',
+    'transport',
+    'medical',
+    'social'
+  ];
+  
+  final List<String> _requirements = [
+    'Patient',
+    'Clear pronunciation',
+    'Academic background',
+    'ISL proficient',
+    'Tech terminology knowledge',
+    'Medical knowledge',
+    'Driving license'
+  ];
+  
+  final List<String> _durations = [
+    '30 minutes',
+    '1 hour',
+    '2 hours',
+    '3 hours',
+    '4+ hours'
+  ];
+  
+  final List<String> _priorities = [
+    'low',
+    'normal',
+    'high',
+    'urgent'
+  ];
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     
     // Initialize with empty list
     _nearbyVolunteers = [];
     _favoriteVolunteers = [_sampleVolunteers[0], _sampleVolunteers[2]];
+    
+    // Initialize speech recognition
+    _speech = stt.SpeechToText();
+    _initSpeech();
+    _initTts();
   }
 
   @override
@@ -112,6 +185,31 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
     _searchController.dispose();
     _searchTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _initSpeech() async {
+    await _speech.initialize(
+      onStatus: (status) {
+        print('Speech recognition status: $status');
+        if (status == 'done' && _isListening) {
+          setState(() {
+            _isListening = false;
+          });
+        }
+      },
+      onError: (error) => print('Speech recognition error: $error'),
+    );
+  }
+  
+  Future<void> _initTts() async {
+    await _flutterTts.setLanguage("en-US");
+    await _flutterTts.setSpeechRate(0.5);
+    await _flutterTts.setVolume(1.0);
+    await _flutterTts.setPitch(1.0);
+  }
+  
+  Future<void> _speak(String text) async {
+    await _flutterTts.speak(text);
   }
 
   void _searchVolunteers() {
@@ -152,72 +250,363 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
   void _requestHelp(Volunteer volunteer) {
     showDialog(
       context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Request Help'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('You are about to request help from ${volunteer.name}.'),
+                  const SizedBox(height: 16),
+                  
+                  // Title field
+                  const Text('Title:'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Brief title for your request',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                    ),
+                    onChanged: (value) {
+                      _requestTitle = value;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Assistance type
+                  const Text('What type of assistance do you need?'),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: volunteer.categories.contains(_selectedCategory) 
+                            ? _selectedCategory
+                            : volunteer.categories.first,
+                        items: volunteer.categories.map((category) {
+                          return DropdownMenuItem<String>(
+                            value: category,
+                            child: Text(category),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedCategory = value!;
+                            // Add to assistance types
+                            _selectedAssistanceTypes = [value.toLowerCase()];
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Disability type
+                  const Text('Disability type:'),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: _selectedDisabilityType,
+                        items: _disabilityTypes.map((type) {
+                          return DropdownMenuItem<String>(
+                            value: type,
+                            child: Text(type.replaceAll('_', ' ')),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedDisabilityType = value!;
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Priority
+                  const Text('Priority:'),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: _requestPriority,
+                        items: _priorities.map((priority) {
+                          return DropdownMenuItem<String>(
+                            value: priority,
+                            child: Text(priority),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _requestPriority = value!;
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Duration
+                  const Text('Duration needed:'),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: _durationNeeded,
+                        items: _durations.map((duration) {
+                          return DropdownMenuItem<String>(
+                            value: duration,
+                            child: Text(duration),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _durationNeeded = value!;
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Location
+                  const Text('Location:'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    decoration: InputDecoration(
+                      hintText: 'Where do you need assistance?',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                    ),
+                    onChanged: (value) {
+                      _requestLocation = value;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Message description
+                  const Text('Detailed description:'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: _isListening 
+                          ? 'Listening...' 
+                          : _transcription.isEmpty 
+                              ? 'Describe what you need help with...'
+                              : _transcription,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                      suffixIcon: IconButton(
+                        icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
+                        onPressed: () {
+                          if (!_isListening) {
+                            _startListening(setState);
+                          } else {
+                            _stopListening(setState);
+                          }
+                        },
+                      ),
+                    ),
+                    controller: TextEditingController(text: _transcription),
+                    onChanged: (value) {
+                      setState(() {
+                        _transcription = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Voice input available. Tap the microphone icon to use speech.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _transcription = '';
+                },
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  _submitHelpRequest(volunteer);
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Send Request'),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
+  
+  Future<void> _startListening(StateSetter setModalState) async {
+    if (!_speech.isAvailable) {
+      await _initSpeech();
+    }
+    
+    if (await _speech.initialize()) {
+      setModalState(() {
+        _isListening = true;
+        _transcription = '';
+      });
+      
+      _speak("Please describe what you need help with");
+      
+      await _speech.listen(
+        onResult: (result) {
+          setModalState(() {
+            _transcription = result.recognizedWords;
+          });
+        },
+      );
+    }
+  }
+  
+  void _stopListening(StateSetter setModalState) {
+    _speech.stop();
+    setModalState(() {
+      _isListening = false;
+    });
+  }
+  
+  void _submitHelpRequest([Volunteer? volunteer]) {
+    // Generate a unique key for the new request
+    final newRequestKey = _database.child('help_requests').push().key;
+    
+    if (newRequestKey == null) {
+      _showErrorDialog('Failed to create request');
+      return;
+    }
+    
+    // Format the date for Firebase
+    final dateFormat = DateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+    final formattedDate = dateFormat.format(_dateNeeded.toUtc());
+    final now = dateFormat.format(DateTime.now().toUtc());
+    
+    // User information would normally come from authentication
+    final userId = 'user123';
+    
+    // Create request object matching the desired format
+    final helpRequest = {
+      'title': _requestTitle.isEmpty 
+          ? 'Need assistance with ${_selectedAssistanceTypes.join(", ")}' 
+          : _requestTitle,
+      'description': _transcription.isEmpty 
+          ? 'Looking for assistance with ${_selectedAssistanceTypes.join(", ")}' 
+          : _transcription,
+      'user_id': userId,
+      'created_at': now,
+      'status': 'pending', // Changed from 'active' to 'pending' since no volunteer is assigned yet
+      'priority': _requestPriority,
+      'location': _requestLocation.isEmpty 
+          ? 'Current location' 
+          : _requestLocation,
+      'date_needed': formattedDate,
+      'duration': _durationNeeded,
+      'requirements': _selectedRequirements,
+      'disability_type': _selectedDisabilityType,
+      'assistance_type': _selectedAssistanceTypes,
+    };
+
+    // If a specific volunteer is selected, add their information
+    if (volunteer != null) {
+      helpRequest.addAll({
+        'volunteer_id': volunteer.id,
+        'volunteer_name': volunteer.name,
+        'status': 'active', // Set to active when volunteer is assigned
+      });
+    }
+    
+    // Save to Firebase under help_requests node
+    _database.child('help_requests').child(newRequestKey).set(helpRequest)
+    .then((_) {
+      _showRequestSentDialog();
+      _resetRequestForm();
+    })
+    .catchError((error) {
+      _showErrorDialog('Failed to submit request: $error');
+    });
+  }
+  
+  void _resetRequestForm() {
+    setState(() {
+      _transcription = '';
+      _requestTitle = '';
+      _requestLocation = '';
+    });
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Request Help'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('You are about to request help from ${volunteer.name}.'),
-            const SizedBox(height: 16),
-            const Text('What type of assistance do you need?'),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  isExpanded: true,
-                  value: volunteer.categories.first,
-                  items: volunteer.categories.map((category) {
-                    return DropdownMenuItem<String>(
-                      value: category,
-                      child: Text(category),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    // Update selected category
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text('Add a message (optional):'),
-            const SizedBox(height: 8),
-            TextField(
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: 'Describe what you need help with...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                filled: true,
-                fillColor: Colors.grey[100],
-              ),
-            ),
-          ],
-        ),
+        title: const Text('Error'),
+        content: Text(message),
         actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
-            child: const Text('Cancel'),
-          ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              _showRequestSentDialog();
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.primary,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Send Request'),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -229,11 +618,14 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Request Sent'),
-        content: const Text('Your help request has been sent. A volunteer will respond shortly.'),
+        content: const Text(
+          'Your help request has been submitted. Available volunteers will be notified and can accept your request.',
+        ),
         actions: [
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
+              _speak("Your help request has been submitted. You will be notified when a volunteer accepts.");
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.primary,
@@ -254,285 +646,339 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Volunteer Network'),
+        title: const Text('Help Requests'),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
-            Tab(text: 'Nearby'),
-            Tab(text: 'Favorites'),
+            Tab(text: 'New Request'),
+            Tab(text: 'Active'),
+            Tab(text: 'History'),
           ],
           labelColor: colorScheme.primary,
           unselectedLabelColor: Colors.grey,
           indicatorColor: colorScheme.primary,
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.history),
-            onPressed: () {
-              // Navigate to request history
-            },
-          ),
-        ],
       ),
-      body: Column(
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          // Search and Filter
-          Container(
+          // New Request Tab
+          SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isDarkMode ? Colors.grey[900] : Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 5,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Search Bar
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(
-                      color: Colors.grey[300]!,
+                // Request Form Card
+                Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Create Help Request',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Title field
+                        TextField(
+                          decoration: InputDecoration(
+                            labelText: 'Request Title',
+                            hintText: 'Brief title for your request',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            filled: true,
+                            fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                          ),
+                          onChanged: (value) {
+                            _requestTitle = value;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Assistance Type Chips
+                        Text(
+                          'Type of Assistance',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _assistanceTypes.map((type) {
+                            final isSelected = _selectedAssistanceTypes.contains(type);
+                            return FilterChip(
+                              label: Text(type),
+                              selected: isSelected,
+                              onSelected: (selected) {
+                                setState(() {
+                                  if (selected) {
+                                    _selectedAssistanceTypes.add(type);
+                                  } else {
+                                    _selectedAssistanceTypes.remove(type);
+                                  }
+                                });
+                              },
+                              backgroundColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                              selectedColor: colorScheme.primary.withOpacity(0.2),
+                              checkmarkColor: colorScheme.primary,
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Requirements
+                        Text(
+                          'Requirements',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _requirements.map((req) {
+                            final isSelected = _selectedRequirements.contains(req);
+                            return FilterChip(
+                              label: Text(req),
+                              selected: isSelected,
+                              onSelected: (selected) {
+                                setState(() {
+                                  if (selected) {
+                                    _selectedRequirements.add(req);
+                                  } else {
+                                    _selectedRequirements.remove(req);
+                                  }
+                                });
+                              },
+                              backgroundColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                              selectedColor: colorScheme.primary.withOpacity(0.2),
+                              checkmarkColor: colorScheme.primary,
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Priority and Duration Row
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: _requestPriority,
+                                decoration: InputDecoration(
+                                  labelText: 'Priority',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  filled: true,
+                                  fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                                ),
+                                items: _priorities.map((priority) {
+                                  return DropdownMenuItem(
+                                    value: priority,
+                                    child: Text(priority),
+                                  );
+                                }).toList(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _requestPriority = value!;
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: _durationNeeded,
+                                decoration: InputDecoration(
+                                  labelText: 'Duration',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  filled: true,
+                                  fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                                ),
+                                items: _durations.map((duration) {
+                                  return DropdownMenuItem(
+                                    value: duration,
+                                    child: Text(duration),
+                                  );
+                                }).toList(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _durationNeeded = value!;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Location
+                        TextField(
+                          decoration: InputDecoration(
+                            labelText: 'Location',
+                            hintText: 'Where do you need assistance?',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            filled: true,
+                            fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                          ),
+                          onChanged: (value) {
+                            _requestLocation = value;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Description with Voice Input
+                        TextField(
+                          maxLines: 3,
+                          decoration: InputDecoration(
+                            labelText: 'Description',
+                            hintText: _isListening 
+                                ? 'Listening...' 
+                                : 'Describe what you need help with...',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            filled: true,
+                            fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                            suffixIcon: IconButton(
+                              icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
+                              onPressed: () {
+                                if (!_isListening) {
+                                  _startListening(setState);
+                                } else {
+                                  _stopListening(setState);
+                                }
+                              },
+                            ),
+                          ),
+                          controller: TextEditingController(text: _transcription),
+                          onChanged: (value) {
+                            _transcription = value;
+                          },
+                        ),
+                        
+                        const SizedBox(height: 24),
+                        
+                        // Submit Button
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () => _submitHelpRequest(null),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: colorScheme.primary,
+                              foregroundColor: colorScheme.onPrimary,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text(
+                              'Submit Request',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.search,
-                        color: Colors.grey[600],
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          decoration: const InputDecoration(
-                            hintText: 'Search volunteers...',
-                            border: InputBorder.none,
-                          ),
-                        ),
-                      ),
-                      if (_searchController.text.isNotEmpty)
-                        IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            _searchController.clear();
-                          },
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // Categories
-                SizedBox(
-                  height: 40,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _categories.length,
-                    itemBuilder: (context, index) {
-                      final category = _categories[index];
-                      final isSelected = category == _selectedCategory;
-                      
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: InkWell(
-                          onTap: () {
-                            setState(() {
-                              _selectedCategory = category;
-                            });
-                            _searchVolunteers();
-                          },
-                          borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? colorScheme.primary
-                                  : isDarkMode
-                                      ? Colors.grey[800]
-                                      : Colors.grey[100],
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: isSelected
-                                    ? colorScheme.primary
-                                    : Colors.grey[300]!,
-                              ),
-                            ),
-                            child: Center(
-                              child: Text(
-                                category,
-                                style: TextStyle(
-                                  color: isSelected
-                                      ? colorScheme.onPrimary
-                                      : null,
-                                  fontWeight: isSelected
-                                      ? FontWeight.w600
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
                 ),
               ],
             ),
           ),
-
-          // Tab Content
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                // Nearby Volunteers Tab
-                _isSearching
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
-                            ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Searching for nearby volunteers...',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : _nearbyVolunteers.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.people_outline,
-                                  size: 80,
-                                  color: Colors.grey[400],
-                                ),
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'No volunteers found nearby',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Tap the search button to find volunteers',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-                                ElevatedButton(
-                                  onPressed: _searchVolunteers,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: colorScheme.primary,
-                                    foregroundColor: colorScheme.onPrimary,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 24,
-                                      vertical: 12,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(30),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    'Search Now',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _nearbyVolunteers.length,
-                            itemBuilder: (context, index) {
-                              final volunteer = _nearbyVolunteers[index];
-                              return _buildVolunteerCard(volunteer);
-                            },
-                          ),
-
-                // Favorite Volunteers Tab
-                _favoriteVolunteers.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.favorite_border,
-                              size: 80,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'No favorite volunteers yet',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Add volunteers to your favorites list',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _favoriteVolunteers.length,
-                        itemBuilder: (context, index) {
-                          final volunteer = _favoriteVolunteers[index];
-                          return _buildVolunteerCard(volunteer);
-                        },
-                      ),
-              ],
-            ),
+          
+          // Active Requests Tab
+          StreamBuilder<DatabaseEvent>(
+            stream: _database.child('help_requests')
+                .orderByChild('status')
+                .equalTo('active')
+                .onValue,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(child: Text('Error: ${snapshot.error}'));
+              }
+              
+              if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
+                return const Center(child: Text('No active requests'));
+              }
+              
+              // Convert data to list of requests
+              final requestsMap = Map<String, dynamic>.from(
+                snapshot.data!.snapshot.value as Map
+              );
+              
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: requestsMap.length,
+                itemBuilder: (context, index) {
+                  final request = requestsMap.entries.elementAt(index);
+                  return _buildRequestCard(request.key, Map<String, dynamic>.from(request.value));
+                },
+              );
+            },
+          ),
+          
+          // History Tab
+          StreamBuilder<DatabaseEvent>(
+            stream: _database.child('help_requests')
+                .orderByChild('status')
+                .equalTo('completed')
+                .onValue,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(child: Text('Error: ${snapshot.error}'));
+              }
+              
+              if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
+                return const Center(child: Text('No request history'));
+              }
+              
+              final requestsMap = Map<String, dynamic>.from(
+                snapshot.data!.snapshot.value as Map
+              );
+              
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: requestsMap.length,
+                itemBuilder: (context, index) {
+                  final request = requestsMap.entries.elementAt(index);
+                  return _buildRequestCard(request.key, Map<String, dynamic>.from(request.value));
+                },
+              );
+            },
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          // Emergency help request
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
               title: const Text('Emergency Help'),
-              content: const Text('This will send an urgent help request to all nearby volunteers. Continue?'),
+              content: const Text('This will send an urgent help request. Continue?'),
               actions: [
                 TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
+                  onPressed: () => Navigator.pop(context),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
                   onPressed: () {
                     Navigator.pop(context);
-                    _showRequestSentDialog();
+                    _sendEmergencyHelpRequest();
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
@@ -551,238 +997,154 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
     );
   }
 
-  Widget _buildVolunteerCard(Volunteer volunteer) {
+  Widget _buildRequestCard(String requestId, Map<String, dynamic> request) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDarkMode = theme.brightness == Brightness.dark;
-    final isFavorite = _favoriteVolunteers.any((v) => v.id == volunteer.id);
-
-    return Container(
+    
+    return Card(
       margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: isDarkMode ? Colors.grey[800] : Colors.white,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
-      child: Column(
-        children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                // Profile Image
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      volunteer.name[0],
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                // Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            volunteer.name,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: volunteer.isOnline ? Colors.green : Colors.grey,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.star,
-                            size: 16,
-                            color: Colors.amber,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            volunteer.rating.toString(),
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Icon(
-                            Icons.location_on,
-                            size: 16,
-                            color: Colors.grey[600],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${volunteer.distance} km away',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Helped ${volunteer.totalHelped} people',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Favorite Button
-                IconButton(
-                  icon: Icon(
-                    isFavorite ? Icons.favorite : Icons.favorite_border,
-                    color: isFavorite ? Colors.red : Colors.grey,
-                  ),
-                  onPressed: () => _toggleFavorite(volunteer),
-                ),
-              ],
-            ),
-          ),
-          // Categories
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                const Text(
-                  'Specialties:',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: SizedBox(
-                    height: 30,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: volunteer.categories.length,
-                      itemBuilder: (context, index) {
-                        final category = volunteer.categories[index];
-                        
-                        return Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primaryContainer.withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          child: Text(
-                            category,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Status and Action
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                // Status
                 Expanded(
                   child: Text(
-                    volunteer.isOnline
-                        ? 'Available now'
-                        : 'Last active ${_formatLastActive(volunteer.lastActive)}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: volunteer.isOnline ? Colors.green : Colors.grey[600],
-                      fontWeight: volunteer.isOnline ? FontWeight.w500 : FontWeight.normal,
+                    request['title'] as String,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ),
-                // Request Help Button
-                ElevatedButton(
-                  onPressed: () => _requestHelp(volunteer),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: colorScheme.primary,
-                    foregroundColor: colorScheme.onPrimary,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
                   ),
-                  child: const Text(
-                    'Request Help',
+                  decoration: BoxDecoration(
+                    color: _getPriorityColor(request['priority'] as String),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    request['priority'] as String,
                     style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                      fontSize: 12,
                     ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              request['description'] as String,
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.location_on,
+                  size: 16,
+                  color: Colors.grey[600],
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  request['location'] as String,
+                  style: theme.textTheme.bodySmall,
+                ),
+                const Spacer(),
+                Text(
+                  'Duration: ${request['duration']}',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+            if (request['status'] == 'active')
+              Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        // Cancel request
+                        _database.child('help_requests')
+                            .child(requestId)
+                            .update({'status': 'cancelled'});
+                      },
+                      child: const Text('Cancel Request'),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  String _formatLastActive(DateTime lastActive) {
-    final now = DateTime.now();
-    final difference = now.difference(lastActive);
-    
-    if (difference.inMinutes < 60) {
-      return '${difference.inMinutes} min ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours} hours ago';
-    } else {
-      return '${difference.inDays} days ago';
+  Color _getPriorityColor(String priority) {
+    switch (priority) {
+      case 'urgent':
+        return Colors.red;
+      case 'high':
+        return Colors.orange;
+      case 'normal':
+        return Colors.blue;
+      case 'low':
+        return Colors.green;
+      default:
+        return Colors.grey;
     }
+  }
+
+  // Update the emergency help request method
+  void _sendEmergencyHelpRequest() {
+    // Generate a unique key for the emergency request
+    final newRequestKey = _database.child('help_requests').push().key;
+    
+    if (newRequestKey == null) {
+      _showErrorDialog('Failed to create emergency request');
+      return;
+    }
+    
+    // Format the date for Firebase
+    final dateFormat = DateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+    final now = dateFormat.format(DateTime.now().toUtc());
+    
+    // User information would normally come from authentication
+    final userId = 'user123';
+    
+    // Create emergency request object matching the desired format
+    final emergencyRequest = {
+      'title': 'EMERGENCY: Immediate assistance needed',
+      'description': 'Emergency help request. Please respond immediately.',
+      'user_id': userId,
+      'created_at': now,
+      'status': 'active',
+      'priority': 'urgent',
+      'location': 'Current location',
+      'date_needed': now,
+      'duration': '1 hour',
+      'requirements': ['Immediate response'],
+      'disability_type': _selectedDisabilityType,
+      'assistance_type': ['emergency'],
+    };
+    
+    // Save to Firebase under help_requests node
+    _database.child('help_requests').child(newRequestKey).set(emergencyRequest)
+    .then((_) {
+      _showRequestSentDialog();
+    })
+    .catchError((error) {
+      _showErrorDialog('Failed to submit emergency request: $error');
+    });
   }
 }
 
