@@ -11,7 +11,6 @@ import 'package:visionai/screens/home/home_screen.dart';
 import 'package:visionai/theme/app_theme.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
-import 'screens/features/dyslexic_learning_screen.dart';
 import 'screens/features/mental_health_screen.dart';
 
 Future<void> main() async {
@@ -74,10 +73,7 @@ final _router = GoRouter(
       path: '/home',
       builder: (context, state) => const HomeScreen(),
     ),
-    GoRoute(
-      path: '/dyslexic-learning',
-      builder: (context, state) => const DyslexicLearningScreen(),
-    ),
+   
     GoRoute(
       path: '/mental-health',
       builder: (context, state) => const MentalHealthScreen(),
