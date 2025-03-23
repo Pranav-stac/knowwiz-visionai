@@ -323,8 +323,23 @@ class HomeContent extends StatelessWidget {
                     description: 'AI-driven emotional support',
                     icon: Icons.favorite,
                     color: Colors.red,
-                    onTap: () {
-                      GoRouter.of(context).go('/mental-health');
+                    onTap: () async {
+                      final Uri url = Uri.parse('https://useful-herring-radically.ngrok-free.app');
+                      try {
+                        // Use a more reliable approach for launching URLs
+                        await launchUrl(
+                          url,
+                          mode: LaunchMode.externalApplication,
+                          webViewConfiguration: const WebViewConfiguration(
+                            enableJavaScript: true,
+                            enableDomStorage: true,
+                          ),
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Could not launch mental health support: ${e.toString()}')),
+                        );
+                      }
                     },
                   ),
                   FeatureCard(
