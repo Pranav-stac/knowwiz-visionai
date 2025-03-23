@@ -21,22 +21,9 @@ class DyslexicLearningService {
   DyslexicLearningService._internal();
   
   Future<void> initialize() async {
-    await _loadModels();
+
     await _loadFavorites();
     await _loadProgress();
-  }
-  
-  Future<void> _loadModels() async {
-    try {
-      // Load models from a JSON file in the assets
-      final String jsonString = await rootBundle.loadString('assets/data/dyslexic_learning_models.json');
-      final List<dynamic> jsonList = json.decode(jsonString);
-      
-      _models = jsonList.map((json) => DyslexicLearningModel.fromMap(json)).toList();
-    } catch (e) {
-      // In case there's no file yet, create some sample models
-      _models = _getSampleModels();
-    }
   }
   
   Future<void> _loadFavorites() async {
