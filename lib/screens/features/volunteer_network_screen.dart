@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:intl/intl.dart';
+import 'dart:ui';
 
 class VolunteerNetworkScreen extends StatefulWidget {
   const VolunteerNetworkScreen({super.key});
@@ -822,331 +823,382 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDarkMode = theme.brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Help Requests'),
+        title: const Text(
+          'Help Requests',
+          style: TextStyle(
+            color: Color(0xFFE5E7EB),
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
             Tab(text: 'New Request'),
-            Tab(text: 'Accepted'),  // Updated tab name
+            Tab(text: 'Accepted'),
           ],
-          labelColor: colorScheme.primary,
-          unselectedLabelColor: Colors.grey,
-          indicatorColor: colorScheme.primary,
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          // New Request Tab
-          SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Request Form Card
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Create Help Request',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        
-                        // Title field
-                        TextField(
-                          decoration: InputDecoration(
-                            labelText: 'Request Title',
-                            hintText: 'Brief title for your request',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            filled: true,
-                            fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
-                          ),
-                          onChanged: (value) {
-                            _requestTitle = value;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        
-                        // Assistance Type Chips
-                        Text(
-                          'Type of Assistance',
-                          style: theme.textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _assistanceTypes.map((type) {
-                            final isSelected = _selectedAssistanceTypes.contains(type);
-                            return FilterChip(
-                              label: Text(type),
-                              selected: isSelected,
-                              onSelected: (selected) {
-                                setState(() {
-                                  if (selected) {
-                                    _selectedAssistanceTypes.add(type);
-                                  } else {
-                                    _selectedAssistanceTypes.remove(type);
-                                  }
-                                });
-                              },
-                              backgroundColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
-                              selectedColor: colorScheme.primary.withOpacity(0.2),
-                              checkmarkColor: colorScheme.primary,
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 16),
-                        
-                        // Requirements
-                        Text(
-                          'Requirements',
-                          style: theme.textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _requirements.map((req) {
-                            final isSelected = _selectedRequirements.contains(req);
-                            return FilterChip(
-                              label: Text(req),
-                              selected: isSelected,
-                              onSelected: (selected) {
-                                setState(() {
-                                  if (selected) {
-                                    _selectedRequirements.add(req);
-                                  } else {
-                                    _selectedRequirements.remove(req);
-                                  }
-                                });
-                              },
-                              backgroundColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
-                              selectedColor: colorScheme.primary.withOpacity(0.2),
-                              checkmarkColor: colorScheme.primary,
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 16),
-                        
-                        // Priority and Duration Row
-                        Row(
-                          children: [
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                value: _requestPriority,
-                                decoration: InputDecoration(
-                                  labelText: 'Priority',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  filled: true,
-                                  fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
-                                ),
-                                items: _priorities.map((priority) {
-                                  return DropdownMenuItem(
-                                    value: priority,
-                                    child: Text(priority),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _requestPriority = value!;
-                                  });
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                value: _durationNeeded,
-                                decoration: InputDecoration(
-                                  labelText: 'Duration',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  filled: true,
-                                  fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
-                                ),
-                                items: _durations.map((duration) {
-                                  return DropdownMenuItem(
-                                    value: duration,
-                                    child: Text(duration),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _durationNeeded = value!;
-                                  });
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        
-                        // Location
-                        TextField(
-                          decoration: InputDecoration(
-                            labelText: 'Location',
-                            hintText: 'Where do you need assistance?',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            filled: true,
-                            fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
-                          ),
-                          onChanged: (value) {
-                            _requestLocation = value;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        
-                        // Description with Voice Input
-                        TextField(
-                          maxLines: 3,
-                          decoration: InputDecoration(
-                            labelText: 'Description',
-                            hintText: _isListening 
-                                ? 'Listening...' 
-                                : 'Describe what you need help with...',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            filled: true,
-                            fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
-                            suffixIcon: IconButton(
-                              icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
-                              onPressed: () {
-                                if (!_isListening) {
-                                  _startListening(setState);
-                                } else {
-                                  _stopListening(setState);
-                                }
-                              },
-                            ),
-                          ),
-                          controller: TextEditingController(text: _transcription),
-                          onChanged: (value) {
-                            _transcription = value;
-                          },
-                        ),
-                        
-                        const SizedBox(height: 24),
-                        
-                        // Submit Button
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: () => _submitHelpRequest(null),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: colorScheme.primary,
-                              foregroundColor: colorScheme.onPrimary,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            child: const Text(
-                              'Submit Request',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+          indicator: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: Color(0xFF6366F1),
+                width: 2,
+              ),
             ),
           ),
-          
-          // Completed Requests Tab
-          StreamBuilder<DatabaseEvent>(
-            stream: _acceptedRequestsStream,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              }
-              
-              if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
-                return Center(
+        ),
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: const [
+              Color(0xFF121212),
+              Color(0xFF090909),
+            ],
+          ),
+        ),
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            // New Request Tab
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Card(
+                margin: EdgeInsets.zero,
+                color: const Color(0xFF1E1E2D).withOpacity(0.85),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: const Color(0xFFE5E7EB).withOpacity(0.1),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.task_alt,  // Updated icon
-                        size: 64,
-                        color: Colors.grey[400],
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'No accepted requests yet',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
+                      // Request Form Card
+                      Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Your accepted requests will appear here',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Create Help Request',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Title field
+                              TextField(
+                                decoration: InputDecoration(
+                                  labelText: 'Request Title',
+                                  hintText: 'Brief title for your request',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  filled: true,
+                                  fillColor: colorScheme.background,
+                                ),
+                                onChanged: (value) {
+                                  _requestTitle = value;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Assistance Type Chips
+                              Text(
+                                'Type of Assistance',
+                                style: theme.textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: _assistanceTypes.map((type) {
+                                  final isSelected = _selectedAssistanceTypes.contains(type);
+                                  return FilterChip(
+                                    label: Text(type),
+                                    selected: isSelected,
+                                    onSelected: (selected) {
+                                      setState(() {
+                                        if (selected) {
+                                          _selectedAssistanceTypes.add(type);
+                                        } else {
+                                          _selectedAssistanceTypes.remove(type);
+                                        }
+                                      });
+                                    },
+                                    backgroundColor: colorScheme.background,
+                                    selectedColor: colorScheme.primary.withOpacity(0.2),
+                                    checkmarkColor: colorScheme.primary,
+                                  );
+                                }).toList(),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Requirements
+                              Text(
+                                'Requirements',
+                                style: theme.textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: _requirements.map((req) {
+                                  final isSelected = _selectedRequirements.contains(req);
+                                  return FilterChip(
+                                    label: Text(req),
+                                    selected: isSelected,
+                                    onSelected: (selected) {
+                                      setState(() {
+                                        if (selected) {
+                                          _selectedRequirements.add(req);
+                                        } else {
+                                          _selectedRequirements.remove(req);
+                                        }
+                                      });
+                                    },
+                                    backgroundColor: colorScheme.background,
+                                    selectedColor: colorScheme.primary.withOpacity(0.2),
+                                    checkmarkColor: colorScheme.primary,
+                                  );
+                                }).toList(),
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Priority and Duration Row
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: DropdownButtonFormField<String>(
+                                      value: _requestPriority,
+                                      decoration: InputDecoration(
+                                        labelText: 'Priority',
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        filled: true,
+                                        fillColor: colorScheme.background,
+                                      ),
+                                      items: _priorities.map((priority) {
+                                        return DropdownMenuItem(
+                                          value: priority,
+                                          child: Text(priority),
+                                        );
+                                      }).toList(),
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _requestPriority = value!;
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: DropdownButtonFormField<String>(
+                                      value: _durationNeeded,
+                                      decoration: InputDecoration(
+                                        labelText: 'Duration',
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        filled: true,
+                                        fillColor: colorScheme.background,
+                                      ),
+                                      items: _durations.map((duration) {
+                                        return DropdownMenuItem(
+                                          value: duration,
+                                          child: Text(duration),
+                                        );
+                                      }).toList(),
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _durationNeeded = value!;
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Location
+                              TextField(
+                                decoration: InputDecoration(
+                                  labelText: 'Location',
+                                  hintText: 'Where do you need assistance?',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  filled: true,
+                                  fillColor: colorScheme.background,
+                                ),
+                                onChanged: (value) {
+                                  _requestLocation = value;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              
+                              // Description with Voice Input
+                              TextField(
+                                maxLines: 3,
+                                decoration: InputDecoration(
+                                  labelText: 'Description',
+                                  hintText: _isListening 
+                                      ? 'Listening...' 
+                                      : 'Describe what you need help with...',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  filled: true,
+                                  fillColor: colorScheme.background,
+                                  suffixIcon: IconButton(
+                                    icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
+                                    onPressed: () {
+                                      if (!_isListening) {
+                                        _startListening(setState);
+                                      } else {
+                                        _stopListening(setState);
+                                      }
+                                    },
+                                  ),
+                                ),
+                                controller: TextEditingController(text: _transcription),
+                                onChanged: (value) {
+                                  _transcription = value;
+                                },
+                              ),
+                              
+                              const SizedBox(height: 24),
+                              
+                              // Submit Button
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed: () => _submitHelpRequest(null),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: colorScheme.primary,
+                                    foregroundColor: colorScheme.onPrimary,
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Submit Request',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
                   ),
-                );
-              }
-              
-              // Convert data to list of requests
-              final requestsMap = Map<String, dynamic>.from(
-                snapshot.data!.snapshot.value as Map
-              );
-              
-              return ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: requestsMap.length,
-                itemBuilder: (context, index) {
-                  final request = requestsMap.entries.elementAt(index);
-                  return _buildCompletedRequestCard(
-                    request.key, 
-                    Map<String, dynamic>.from(request.value)
+                ),
+              ),
+            ),
+            
+            // Accepted Requests Tab
+            StreamBuilder<DatabaseEvent>(
+              stream: _acceptedRequestsStream,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Error: ${snapshot.error}',
+                      style: const TextStyle(color: Color(0xFFE5E7EB)),
+                    ),
                   );
-                },
-              );
-            },
-          ),
-        ],
+                }
+                
+                if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.task_alt,
+                          size: 64,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'No accepted requests yet',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFE5E7EB),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                
+                final requestsMap = Map<String, dynamic>.from(
+                  snapshot.data!.snapshot.value as Map
+                );
+                
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: requestsMap.length,
+                  itemBuilder: (context, index) {
+                    final request = requestsMap.entries.elementAt(index);
+                    return _buildCompletedRequestCard(
+                      request.key, 
+                      Map<String, dynamic>.from(request.value)
+                    );
+                  },
+                );
+              },
+            ),
+          ],
+        ),
       ),
+      
+      // Keep your existing FABs
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           FloatingActionButton(
             heroTag: 'voice_request',
             onPressed: _startVoiceRequest,
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            child: const Icon(Icons.mic),
+            elevation: 8,
+            backgroundColor: const Color(0xFF6366F1),
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF6366F1),
+                    const Color(0xFF9333EA),
+                  ],
+                ),
+              ),
+              child: const Icon(Icons.mic, color: Color(0xFFE5E7EB)),
+            ),
           ),
           const SizedBox(height: 16),
           FloatingActionButton.extended(
@@ -1177,9 +1229,16 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
                 ),
               );
             },
-            backgroundColor: Colors.red,
-            icon: const Icon(Icons.sos),
-            label: const Text('Emergency'),
+            elevation: 8,
+            backgroundColor: const Color(0xFFEF4444),
+            icon: const Icon(Icons.sos, color: Color(0xFFE5E7EB)),
+            label: const Text(
+              'Emergency',
+              style: TextStyle(
+                color: Color(0xFFE5E7EB),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
