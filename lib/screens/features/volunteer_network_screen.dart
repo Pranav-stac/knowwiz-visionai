@@ -164,10 +164,22 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
     'urgent'
   ];
 
+  // Add these stream controllers
+  late final Stream<DatabaseEvent> _completedRequestsStream;
+
+  // Add these variables at the top of the class
+  bool _isProcessingSpeech = false;
+  String _currentVoiceText = '';
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
+    
+    // Initialize stream for completed requests with broadcast
+    _completedRequestsStream = _database.child('completed_requests')
+        .onValue
+        .asBroadcastStream();  // Add this to allow multiple listeners
     
     // Initialize with empty list
     _nearbyVolunteers = [];
@@ -638,6 +650,172 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
     );
   }
 
+  // Add this method to analyze speech and extract details
+  void _analyzeSpeechAndCreateRequest(String speech) {
+    // Simple duration detection
+    final durationMatches = RegExp(r'(\d+)\s*(hour|hours|hr|hrs|minute|minutes|min|mins)')
+        .allMatches(speech.toLowerCase());
+    
+    if (durationMatches.isNotEmpty) {
+      final match = durationMatches.first;
+      final number = int.parse(match.group(1)!);
+      final unit = match.group(2)!;
+      
+      if (unit.contains('hour')) {
+        _durationNeeded = '$number hour${number > 1 ? 's' : ''}';
+      } else {
+        if (number >= 60) {
+          _durationNeeded = '${number ~/ 60} hour${(number ~/ 60) > 1 ? 's' : ''}';
+        } else {
+          _durationNeeded = '1 hour'; // Default to minimum 1 hour
+        }
+      }
+    }
+
+    // Priority detection
+    if (speech.toLowerCase().contains('urgent') || 
+        speech.toLowerCase().contains('emergency')) {
+      _requestPriority = 'urgent';
+    } else if (speech.toLowerCase().contains('important')) {
+      _requestPriority = 'high';
+    }
+
+    // Assistance type detection
+    for (final type in _assistanceTypes) {
+      if (speech.toLowerCase().contains(type.toLowerCase())) {
+        _selectedAssistanceTypes.add(type);
+      }
+    }
+
+    // Create the request
+    setState(() {
+      _requestLocation = 'Mumbai'; // Automatic location
+      _transcription = speech;
+      _requestTitle = 'Voice Request: ${speech.split('.').first}'; // First sentence as title
+    });
+
+    // Submit the request
+    _submitHelpRequest(null);
+  }
+
+  // Add this method for voice input request
+  Future<void> _startVoiceRequest() async {
+    if (!_speech.isAvailable) {
+      await _initSpeech();
+    }
+
+    setState(() {
+      _isProcessingSpeech = true;
+      _currentVoiceText = '';
+    });
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return AlertDialog(
+            title: Text(
+              _isListening ? 'Listening...' : 'Voice Request',
+              style: TextStyle(
+                color: _isListening ? Colors.red : null,
+              ),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _isListening ? Colors.red : Theme.of(context).colorScheme.primary,
+                  ),
+                  child: IconButton(
+                    icon: Icon(
+                      _isListening ? Icons.mic : Icons.mic_none,
+                      color: Colors.white,
+                      size: 40,
+                    ),
+                    onPressed: () {
+                      if (_isListening) {
+                        _speech.stop();
+                        setModalState(() {
+                          _isListening = false;
+                        });
+                      } else {
+                        _speech.listen(
+                          onResult: (result) {
+                            setModalState(() {
+                              _currentVoiceText = result.recognizedWords;
+                            });
+                          },
+                          listenFor: const Duration(seconds: 30),
+                          pauseFor: const Duration(seconds: 3),
+                          partialResults: true,
+                          onSoundLevelChange: null,
+                          cancelOnError: true,
+                          listenMode: stt.ListenMode.confirmation,
+                        );
+                        setModalState(() {
+                          _isListening = true;
+                        });
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _isListening 
+                      ? 'Tap to stop when finished'
+                      : 'Tap microphone and describe your request',
+                  textAlign: TextAlign.center,
+                ),
+                if (_currentVoiceText.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _currentVoiceText,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _isProcessingSpeech = false;
+                    _currentVoiceText = '';
+                  });
+                },
+                child: const Text('Cancel'),
+              ),
+              if (!_isListening && _currentVoiceText.isNotEmpty)
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _analyzeSpeechAndCreateRequest(_currentVoiceText);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                  ),
+                  child: const Text('Submit Request'),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -651,8 +829,7 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
           controller: _tabController,
           tabs: const [
             Tab(text: 'New Request'),
-            Tab(text: 'Active'),
-            Tab(text: 'History'),
+            Tab(text: 'Accepted'),  // Updated tab name
           ],
           labelColor: colorScheme.primary,
           unselectedLabelColor: Colors.grey,
@@ -901,19 +1078,43 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
             ),
           ),
           
-          // Active Requests Tab
+          // Completed Requests Tab
           StreamBuilder<DatabaseEvent>(
-            stream: _database.child('help_requests')
-                .orderByChild('status')
-                .equalTo('active')
-                .onValue,
+            stream: _completedRequestsStream,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return Center(child: Text('Error: ${snapshot.error}'));
               }
               
               if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
-                return const Center(child: Text('No active requests'));
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.task_alt,  // Updated icon
+                        size: 64,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No accepted requests yet',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Your accepted requests will appear here',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
               }
               
               // Convert data to list of requests
@@ -926,80 +1127,74 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
                 itemCount: requestsMap.length,
                 itemBuilder: (context, index) {
                   final request = requestsMap.entries.elementAt(index);
-                  return _buildRequestCard(request.key, Map<String, dynamic>.from(request.value));
-                },
-              );
-            },
-          ),
-          
-          // History Tab
-          StreamBuilder<DatabaseEvent>(
-            stream: _database.child('help_requests')
-                .orderByChild('status')
-                .equalTo('completed')
-                .onValue,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
-              }
-              
-              if (!snapshot.hasData || snapshot.data?.snapshot.value == null) {
-                return const Center(child: Text('No request history'));
-              }
-              
-              final requestsMap = Map<String, dynamic>.from(
-                snapshot.data!.snapshot.value as Map
-              );
-              
-              return ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: requestsMap.length,
-                itemBuilder: (context, index) {
-                  final request = requestsMap.entries.elementAt(index);
-                  return _buildRequestCard(request.key, Map<String, dynamic>.from(request.value));
+                  return _buildCompletedRequestCard(
+                    request.key, 
+                    Map<String, dynamic>.from(request.value)
+                  );
                 },
               );
             },
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Emergency Help'),
-              content: const Text('This will send an urgent help request. Continue?'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            heroTag: 'voice_request',
+            onPressed: _startVoiceRequest,
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            child: const Icon(Icons.mic),
+          ),
+          const SizedBox(height: 16),
+          FloatingActionButton.extended(
+            heroTag: 'emergency',
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Emergency Help'),
+                  content: const Text('This will send an urgent help request. Continue?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _sendEmergencyHelpRequest();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Send Emergency Request'),
+                    ),
+                  ],
                 ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _sendEmergencyHelpRequest();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Send Emergency Request'),
-                ),
-              ],
-            ),
-          );
-        },
-        backgroundColor: Colors.red,
-        icon: const Icon(Icons.sos),
-        label: const Text('Emergency'),
+              );
+            },
+            backgroundColor: Colors.red,
+            icon: const Icon(Icons.sos),
+            label: const Text('Emergency'),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildRequestCard(String requestId, Map<String, dynamic> request) {
+  Widget _buildCompletedRequestCard(String requestId, Map<String, dynamic> request) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    
+    // Safely access request data with null checks and defaults
+    final title = request['title'] as String? ?? 'Untitled Request';
+    final description = request['description'] as String? ?? 'No description available';
+    final location = request['location'] as String? ?? 'Location not specified';
+    final duration = request['duration'] as String? ?? 'Duration not specified';
+    final volunteerName = request['volunteer_name'] as String?;
+    final completedAt = request['completed_at'] as String?;
     
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1015,7 +1210,7 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
               children: [
                 Expanded(
                   child: Text(
-                    request['title'] as String,
+                    title,
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -1027,11 +1222,11 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: _getPriorityColor(request['priority'] as String),
+                    color: Colors.green[700],
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(
-                    request['priority'] as String,
+                  child: const Text(
+                    'Completed',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -1041,8 +1236,28 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
               ],
             ),
             const SizedBox(height: 8),
+            if (volunteerName != null) ...[
+              Row(
+                children: [
+                  Icon(
+                    Icons.person,
+                    size: 16,
+                    color: Colors.grey[600],
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Completed by: $volunteerName',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
             Text(
-              request['description'] as String,
+              description,
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 8),
@@ -1054,39 +1269,58 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
                   color: Colors.grey[600],
                 ),
                 const SizedBox(width: 4),
-                Text(
-                  request['location'] as String,
-                  style: theme.textTheme.bodySmall,
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    location,
+                    style: theme.textTheme.bodySmall,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                const Spacer(),
+                Expanded(
+                  flex: 1,
+                  child: Text(
+                    'Duration: $duration',
+                    style: theme.textTheme.bodySmall,
+                    textAlign: TextAlign.end,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.calendar_today,
+                  size: 16,
+                  color: Colors.grey[600],
+                ),
+                const SizedBox(width: 4),
                 Text(
-                  'Duration: ${request['duration']}',
+                  'Completed on: ${_formatDate(completedAt)}',
                   style: theme.textTheme.bodySmall,
                 ),
               ],
             ),
-            if (request['status'] == 'active')
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        // Cancel request
-                        _database.child('help_requests')
-                            .child(requestId)
-                            .update({'status': 'cancelled'});
-                      },
-                      child: const Text('Cancel Request'),
-                    ),
-                  ],
-                ),
-              ),
           ],
         ),
       ),
     );
+  }
+
+  String _formatDate(String? dateString) {
+    if (dateString == null || dateString.isEmpty) {
+      return 'Date not available';
+    }
+    
+    try {
+      final date = DateTime.parse(dateString);
+      return DateFormat('MMM d, y').format(date);
+    } catch (e) {
+      print('Error parsing date: $dateString');
+      return 'Invalid date';
+    }
   }
 
   Color _getPriorityColor(String priority) {
