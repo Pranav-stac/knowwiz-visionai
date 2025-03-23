@@ -164,8 +164,8 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
     'urgent'
   ];
 
-  // Add these stream controllers
-  late final Stream<DatabaseEvent> _completedRequestsStream;
+  // Change the stream name to match its purpose
+  late final Stream<DatabaseEvent> _acceptedRequestsStream;
 
   // Add these variables at the top of the class
   bool _isProcessingSpeech = false;
@@ -176,10 +176,12 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     
-    // Initialize stream for completed requests with broadcast
-    _completedRequestsStream = _database.child('completed_requests')
+    // Initialize stream for assigned requests
+    _acceptedRequestsStream = _database.child('assigned_requests')
+        .orderByChild('status')
+        .equalTo('assigned')
         .onValue
-        .asBroadcastStream();  // Add this to allow multiple listeners
+        .asBroadcastStream();
     
     // Initialize with empty list
     _nearbyVolunteers = [];
@@ -1080,7 +1082,7 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
           
           // Completed Requests Tab
           StreamBuilder<DatabaseEvent>(
-            stream: _completedRequestsStream,
+            stream: _acceptedRequestsStream,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return Center(child: Text('Error: ${snapshot.error}'));
@@ -1193,8 +1195,9 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
     final description = request['description'] as String? ?? 'No description available';
     final location = request['location'] as String? ?? 'Location not specified';
     final duration = request['duration'] as String? ?? 'Duration not specified';
-    final volunteerName = request['volunteer_name'] as String?;
-    final completedAt = request['completed_at'] as String?;
+    final volunteerId = request['volunteer_id'] as String?;
+    final disabilityType = request['disability_type'] as String? ?? 'Not specified';
+    final priority = request['priority'] as String? ?? 'normal';
     
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -1206,6 +1209,7 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Title and Status Badge
             Row(
               children: [
                 Expanded(
@@ -1222,11 +1226,11 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.green[700],
+                    color: Colors.blue[700],
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Text(
-                    'Completed',
+                    'Assigned',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -1236,31 +1240,46 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
               ],
             ),
             const SizedBox(height: 8),
-            if (volunteerName != null) ...[
-              Row(
-                children: [
-                  Icon(
-                    Icons.person,
-                    size: 16,
-                    color: Colors.grey[600],
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Completed by: $volunteerName',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.primary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+            
+            // Volunteer Name with FutureBuilder
+            if (volunteerId != null)
+              FutureBuilder<String>(
+                future: _getVolunteerName(volunteerId),
+                builder: (context, snapshot) {
+                  final volunteerName = snapshot.data ?? 'Loading...';
+                  return Row(
+                    children: [
+                      Icon(
+                        Icons.person,
+                        size: 16,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'Assigned to: $volunteerName',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
-              const SizedBox(height: 8),
-            ],
+            
+            // Description
             Text(
               description,
               style: theme.textTheme.bodyMedium,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 8),
+            
+            // Location and Duration - Fixed overflow
             Row(
               children: [
                 Icon(
@@ -1270,36 +1289,59 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
                 ),
                 const SizedBox(width: 4),
                 Expanded(
-                  flex: 2,
                   child: Text(
                     location,
                     style: theme.textTheme.bodySmall,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                Expanded(
-                  flex: 1,
-                  child: Text(
-                    'Duration: $duration',
-                    style: theme.textTheme.bodySmall,
-                    textAlign: TextAlign.end,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                const SizedBox(width: 8),
+                Text(
+                  duration,
+                  style: theme.textTheme.bodySmall,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
             const SizedBox(height: 8),
+            
+            // Disability Type and Priority - Fixed overflow
             Row(
               children: [
-                Icon(
-                  Icons.calendar_today,
-                  size: 16,
-                  color: Colors.grey[600],
+                Expanded(
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.accessibility_new,
+                        size: 16,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          disabilityType.replaceAll('_', ' '),
+                          style: theme.textTheme.bodySmall,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  'Completed on: ${_formatDate(completedAt)}',
-                  style: theme.textTheme.bodySmall,
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: _getPriorityColor(priority).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    priority.toUpperCase(),
+                    style: TextStyle(
+                      color: _getPriorityColor(priority),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1379,6 +1421,20 @@ class _VolunteerNetworkScreenState extends State<VolunteerNetworkScreen> with Si
     .catchError((error) {
       _showErrorDialog('Failed to submit emergency request: $error');
     });
+  }
+
+  // Add this method to fetch volunteer name from users collection
+  Future<String> _getVolunteerName(String volunteerId) async {
+    try {
+      final snapshot = await _database.child('users/$volunteerId/fullName').get();
+      if (snapshot.exists) {
+        return snapshot.value as String;
+      }
+      return 'Unknown Volunteer';
+    } catch (e) {
+      print('Error fetching volunteer name: $e');
+      return 'Unknown Volunteer';
+    }
   }
 }
 
