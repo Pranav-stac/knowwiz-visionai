@@ -35,13 +35,14 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.visionai"
+        applicationId = "vision.ai"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
         minSdkVersion 25
         targetSdk = flutter.targetSdkVersion
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
+        resValue "string", "server_client_id", "335489594965-8q3fshpdcov9kf7q2qh4ge71r5ldr0q8.apps.googleusercontent.com"
     }
 
     buildTypes {

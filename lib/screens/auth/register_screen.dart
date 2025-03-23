@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:visionai/widgets/custom_text_field.dart';
 import 'package:visionai/screens/home/home_screen.dart';
+import 'package:visionai/services/auth_service.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -19,6 +21,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isConfirmPasswordVisible = false;
   String _selectedUserType = 'User';
   final List<String> _userTypes = ['User', 'Volunteer', 'Caregiver'];
+  final _authService = AuthService();
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -41,13 +45,156 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
   }
 
-  void _register() {
+  Future<void> _register() async {
     if (_formKey.currentState!.validate()) {
-      // In a real app, you would register with your backend here
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+      setState(() => _isLoading = true);
+      try {
+        final credential = await _authService.signUpWithEmailPassword(
+          _emailController.text.trim(),
+          _passwordController.text,
+        );
+        
+        if (credential != null && credential.user != null) {
+          // Save additional user info to Firebase Database
+          final userId = credential.user!.uid;
+          
+          try {
+            // Create user details map
+            final userData = {
+              'fullName': _nameController.text,
+              'email': _emailController.text,
+              'type': _selectedUserType,
+              'createdAt': DateTime.now().toIso8601String(),
+              'verified': false,
+              'online': true,
+              'last_seen': ServerValue.timestamp,
+            };
+            
+            // Set user data in the database
+            await FirebaseDatabase.instance
+                .ref()
+                .child('users/$userId')
+                .set(userData);
+            
+            // Navigate to home screen
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (context) => const HomeScreen()),
+            );
+          } catch (dbError) {
+            print('Database error: $dbError');
+            _showErrorDialog('Failed to save user data: $dbError');
+          }
+        }
+      } catch (e) {
+        _showErrorDialog(e.toString());
+      } finally {
+        setState(() => _isLoading = false);
+      }
     }
+  }
+
+  Future<void> _signUpWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      print('Register screen: Starting Google sign-up process');
+      final credential = await _authService.signInWithGoogle();
+      
+      // Check if we're signed in regardless of credential return value
+      if (_authService.currentUser != null) {
+        print('Register screen: User is signed in, navigating to home');
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
+      } else if (credential != null) {
+        print('Register screen: Google sign-up successful, navigating to home');
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+        );
+      } else {
+        print('Register screen: Google sign-up cancelled by user');
+      }
+    } catch (e) {
+      print('Register screen: Google sign-up error: $e');
+      _showErrorDialog('Google Sign-Up Error: ${e.toString()}');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Widget _socialLoginButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark 
+              ? Colors.grey[800] 
+              : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Icon(
+          icon,
+          color: color,
+          size: 30,
+        ),
+      ),
+    );
+  }
+
+  Row _buildSocialSignUpButtons() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _socialLoginButton(
+          icon: Icons.g_mobiledata,
+          color: Colors.red,
+          onPressed: _signUpWithGoogle,
+        ),
+        _socialLoginButton(
+          icon: Icons.facebook,
+          color: Colors.blue,
+          onPressed: () {
+            _showErrorDialog('Facebook sign-up is not implemented yet');
+          },
+        ),
+        _socialLoginButton(
+          icon: Icons.apple,
+          color: Colors.black,
+          onPressed: () {
+            _showErrorDialog('Apple sign-up is not implemented yet');
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -300,7 +447,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         width: double.infinity,
                         height: 56,
                         child: ElevatedButton(
-                          onPressed: _register,
+                          onPressed: _isLoading ? null : _register,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: colorScheme.primary,
                             foregroundColor: colorScheme.onPrimary,
@@ -309,13 +456,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          child: const Text(
-                            'Create Account',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          child: _isLoading
+                              ? const CircularProgressIndicator(color: Colors.white)
+                              : const Text(
+                                  'Create Account',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                         ),
                       ),
                       const SizedBox(height: 30),
@@ -345,6 +494,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(height: 30),
+                Row(
+                  children: [
+                    Expanded(child: Divider(color: Colors.grey[400], thickness: 1)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        'Or sign up with',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                      ),
+                    ),
+                    Expanded(child: Divider(color: Colors.grey[400], thickness: 1)),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _buildSocialSignUpButtons(),
               ],
             ),
           ),
