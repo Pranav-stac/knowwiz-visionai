@@ -7,6 +7,7 @@ import 'package:visionai/screens/features/scene_description_screen.dart';
 import 'package:visionai/screens/features/volunteer_network_screen.dart';
 import 'package:visionai/screens/features/learning_resources_screen.dart';
 import 'package:visionai/screens/features/image_captioning_screen.dart';
+import 'package:visionai/screens/features/mental_health_screen.dart';
 import 'package:visionai/widgets/feature_card.dart';
 import 'package:visionai/screens/profile/profile_screen.dart';
 import 'package:go_router/go_router.dart';
@@ -23,7 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Widget> _screens = [
     const HomeContent(),
     const VolunteerNetworkScreen(),
-   
+    const MentalHealthScreen(),
     const ProfileScreen(),
   ];
 

@@ -36,11 +36,17 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
   
   // Reliability tracking
   int _restartAttempts = 0;
-  static const int _maxRestartAttempts = 3;
+  static const int _maxRestartAttempts = 5;
   DateTime? _lastRestartTime;
   
   // New variables for the improved restart strategy
   bool _restartPending = false;
+  
+  // Add these new variables for improved error handling
+  int _timeoutCount = 0;
+  int _noMatchCount = 0;
+  Timer? _cooldownTimer;
+  bool _inCooldownPeriod = false;
 
   @override
   void initState() {
@@ -61,6 +67,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     _streamProcessTimer?.cancel();
     _listeningMonitorTimer?.cancel();
     _backupTimer?.cancel();
+    _cooldownTimer?.cancel(); // Dispose new timer
     super.dispose();
   }
   
@@ -83,32 +90,57 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     _speechAvailable = await _speech.initialize(
       onStatus: (status) {
         print('Speech recognition status: $status');
+        
         if (status == 'done' || status == 'notListening') {
           if (_isListening) {
-            // Only attempt restart if we're not already in the middle of a restart
-            if (_lastRestartTime == null || 
-                DateTime.now().difference(_lastRestartTime!).inMilliseconds > 1500) {
+            // Only attempt restart if we're not already in cooldown period
+            if (!_inCooldownPeriod && 
+                (_lastRestartTime == null || 
+                DateTime.now().difference(_lastRestartTime!).inMilliseconds > 1500)) {
               print('Status shows speech ended but we want to keep listening - scheduling restart');
               _scheduleRestart(500); // Use a moderate delay before restart
             } else {
-              print('Ignoring status event as we recently tried to restart');
+              print('Ignoring status event as we recently tried to restart or in cooldown');
             }
           }
+        } else if (status == 'listening') {
+          // Reset error counters when we successfully start listening
+          _timeoutCount = 0;
+          _noMatchCount = 0;
         }
       },
       onError: (errorNotification) {
         print('Speech recognition error: ${errorNotification.errorMsg}, permanent: ${errorNotification.permanent}');
         
+        // Handle specific error types
+        if (errorNotification.errorMsg == 'error_speech_timeout') {
+          _timeoutCount++;
+          print('Speech timeout detected. Count: $_timeoutCount');
+          
+          if (_timeoutCount >= 3) {
+            // If we get too many timeouts, enter cooldown mode
+            _enterCooldownMode('Multiple speech timeouts detected');
+            return;
+          }
+        } 
+        else if (errorNotification.errorMsg == 'error_no_match') {
+          _noMatchCount++;
+          print('No speech match detected. Count: $_noMatchCount');
+          
+          if (_noMatchCount >= 3) {
+            // If we get too many no-match errors, enter cooldown mode
+            _enterCooldownMode('No speech detected after multiple attempts');
+            return;
+          }
+        }
+        
         // Improve error handling based on error type
-        if (_isListening) {
+        if (_isListening && !_inCooldownPeriod) {
           // Don't restart for permanent errors repeatedly
           if (errorNotification.permanent) {
             if (_restartAttempts >= _maxRestartAttempts) {
-              print('Too many permanent errors, temporarily pausing restarts');
-              
-              // Schedule a delayed restart with increasing backoff
-              int delayMs = 2000 + (_restartAttempts * 500);
-              _scheduleRestart(delayMs);
+              print('Too many permanent errors, entering cooldown mode');
+              _enterCooldownMode('Speech recognition needs a break');
               return;
             }
           }
@@ -124,9 +156,9 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
   
   // Schedule a restart with specific delay and tracking
   void _scheduleRestart(int delayMs) {
-    // Check if we already have a pending restart
-    if (_restartPending) {
-      print('Restart already pending, ignoring new request');
+    // Check if we already have a pending restart or in cooldown
+    if (_restartPending || _inCooldownPeriod) {
+      print('Restart already pending or in cooldown, ignoring new request');
       return;
     }
     
@@ -149,7 +181,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     _restartAttempts++;
     _lastRestartTime = DateTime.now();
     
-    // If we've been restarting too frequently, use progressive backoff
+    // Progressive backoff - increase pause between restarts
     int pauseDuration = 300;
     if (_restartAttempts > 1) {
       pauseDuration = 300 * _restartAttempts;
@@ -166,9 +198,15 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
         return;
       }
       
+      // Trigger cooldown mode if we've reached the max attempts
+      if (_restartAttempts >= _maxRestartAttempts) {
+        _enterCooldownMode('Too many restart attempts');
+        return;
+      }
+      
       // Small additional pause for the system to clean up
       Future.delayed(Duration(milliseconds: pauseDuration), () {
-        if (_isListening) {
+        if (_isListening && !_inCooldownPeriod) {
           // Reset restart counter if it's been a while since our last restart
           if (_lastRestartTime != null && 
               DateTime.now().difference(_lastRestartTime!).inSeconds > 10) {
@@ -176,34 +214,20 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
             _restartAttempts = 0;
           }
           
-          // Max restart limit to prevent infinite loops
-          if (_restartAttempts > _maxRestartAttempts * 2) {
-            print('Too many restart attempts, forcing a longer pause');
-            setState(() {
-              _isListening = false;
-            });
-            
-            // Auto-restart after a longer break
-            Future.delayed(const Duration(seconds: 5), () {
-              if (mounted) {
-                setState(() {
-                  _isListening = true;
-                  _restartAttempts = 0;
-                });
-                _startSpeechRecognition();
-              }
-            });
-            return;
-          }
-          
           _startSpeechRecognition();
         }
       });
     }).catchError((e) {
       print('Error stopping speech for restart: $e');
+      // Handle error and maybe enter cooldown
+      if (_restartAttempts >= _maxRestartAttempts - 1) {
+        _enterCooldownMode('Error during restart process');
+        return;
+      }
+      
       // Still try to restart after a longer delay
       Future.delayed(Duration(milliseconds: pauseDuration + 500), () {
-        if (_isListening) {
+        if (_isListening && !_inCooldownPeriod) {
           _startSpeechRecognition();
         }
       });
@@ -212,11 +236,16 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
   
   // Start listening without changing _isListening state
   void _startSpeechRecognition() {
+    if (_inCooldownPeriod) {
+      print('In cooldown period, not starting recognition');
+      return;
+    }
+    
     try {
       print('Starting fresh speech recognition');
       _speech.listen(
         onResult: _onSpeechResult,
-        listenFor: const Duration(seconds: 30), // Longer sessions
+        listenFor: const Duration(seconds: 20), // Shorter sessions to avoid timeouts
         pauseFor: const Duration(seconds: 3),
         partialResults: true,
         localeId: _speechLocale,
@@ -229,12 +258,16 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
       
     } catch (e) {
       print('Error in _startSpeechRecognition: $e');
-      // Try to restart after a delay
-      Future.delayed(const Duration(seconds: 1), () {
-        if (_isListening) {
-          _scheduleRestart(1000);
-        }
-      });
+      // Try to restart after a delay or enter cooldown if too many errors
+      if (_restartAttempts >= _maxRestartAttempts - 1) {
+        _enterCooldownMode('Error starting speech recognition');
+      } else {
+        Future.delayed(const Duration(seconds: 1), () {
+          if (_isListening && !_inCooldownPeriod) {
+            _scheduleRestart(1000);
+          }
+        });
+      }
     }
   }
   
@@ -253,9 +286,14 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     if (_isListening) {
       _stopListening();
     } else {
-      _startListening();
-      // Reset restart attempts
+      // Reset all control variables
       _restartAttempts = 0;
+      _timeoutCount = 0;
+      _noMatchCount = 0;
+      _inCooldownPeriod = false;
+      _cooldownTimer?.cancel();
+      
+      _startListening();
     }
   }
 
@@ -278,12 +316,14 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     _streamProcessTimer?.cancel();
     _listeningMonitorTimer?.cancel();
     _backupTimer?.cancel();
+    _cooldownTimer?.cancel();
     
     setState(() {
       _isListening = true;
       _currentVoiceText = '';
       _restartAttempts = 0;  // Reset restart counter
       _restartPending = false;
+      _inCooldownPeriod = false;
     });
     
     // Setup timer for continuous processing
@@ -296,9 +336,9 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     
     // Create a backup timer that keeps checking if we need to restart
     _backupTimer = Timer.periodic(
-      const Duration(seconds: 1), // Check more frequently
+      const Duration(seconds: 2), // Check less frequently to reduce system load
       (timer) {
-        if (_isListening && !_speech.isListening && !_restartPending) {
+        if (_isListening && !_speech.isListening && !_restartPending && !_inCooldownPeriod) {
           print('Backup timer detected speech not listening');
           _scheduleRestart(300); // Quick restart when backup timer detects issue
         }
@@ -422,7 +462,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
           Future.delayed(const Duration(milliseconds: 200), () {
             if (_isListening && !_speech.isListening && !_restartPending) {
               print('Recognition stopped after final result, scheduling restart');
-              _scheduleRestart(500);
+              _scheduleRestart(200);
             }
           });
         }
@@ -641,6 +681,60 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     });
   }
 
+  // New method for cooldown mode
+  void _enterCooldownMode(String reason) {
+    if (_inCooldownPeriod) return;
+    
+    print('Entering cooldown mode: $reason');
+    _inCooldownPeriod = true;
+    
+    // Stop active listening
+    _speech.stop();
+    
+    // Show user feedback
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Taking a short break. $reason'),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      
+      // Update UI to show we're paused but not stopped
+      setState(() {
+        // We're still "listening" from the user's perspective
+        // but we're taking a break from actual recognition
+      });
+    }
+    
+    // Set a cooldown timer
+    _cooldownTimer?.cancel();
+    _cooldownTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && _isListening) {
+        print('Cooldown period over, restarting speech recognition');
+        _inCooldownPeriod = false;
+        _restartAttempts = 0;
+        _timeoutCount = 0;
+        _noMatchCount = 0;
+        
+        // Start fresh recognition
+        _startSpeechRecognition();
+        
+        // Show user feedback
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Listening resumed'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        _inCooldownPeriod = false;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -674,42 +768,8 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
               ),
               child: Column(
                 children: [
-                  // Speech status indicator
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(
-                      color: _isListening 
-                          ? Colors.green.withOpacity(0.1)
-                          : Colors.grey.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: _isListening 
-                            ? Colors.green.withOpacity(0.3)
-                            : Colors.grey.withOpacity(0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _isListening ? Icons.mic : Icons.mic_off,
-                          size: 16,
-                          color: _isListening ? Colors.green : Colors.grey,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          _isListening ? 'Listening continuously' : 'Microphone off',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: _isListening ? Colors.green : Colors.grey,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  // Speech status indicator - replace with new method
+                  _buildStatusIndicator(),
                   
                   // Generated Image Section
                   if (_generatedImageUrl != null || _isGeneratingImage)
@@ -1055,6 +1115,59 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     final hour = timestamp.hour.toString().padLeft(2, '0');
     final minute = timestamp.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
+  }
+
+  // Update UI status display to show if in cooldown
+  Widget _buildStatusIndicator() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: _isListening
+            ? (_inCooldownPeriod 
+                ? Colors.orange.withOpacity(0.1)
+                : Colors.green.withOpacity(0.1))
+            : Colors.grey.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: _isListening
+              ? (_inCooldownPeriod
+                  ? Colors.orange.withOpacity(0.3)
+                  : Colors.green.withOpacity(0.3))
+              : Colors.grey.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            _isListening
+                ? (_inCooldownPeriod ? Icons.timer : Icons.mic)
+                : Icons.mic_off,
+            size: 16,
+            color: _isListening
+                ? (_inCooldownPeriod ? Colors.orange : Colors.green)
+                : Colors.grey,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            _isListening
+                ? (_inCooldownPeriod
+                    ? 'Paused (resuming soon...)'
+                    : 'Listening continuously')
+                : 'Microphone off',
+            style: TextStyle(
+              fontSize: 12,
+              color: _isListening
+                  ? (_inCooldownPeriod ? Colors.orange : Colors.green)
+                  : Colors.grey,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
