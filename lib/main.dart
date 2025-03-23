@@ -102,6 +102,7 @@ class MyApp extends StatelessWidget {
           useMaterial3: true,
           colorScheme: lightColorScheme,
           textTheme: GoogleFonts.poppinsTextTheme(),
+          textTheme: GoogleFonts.poppinsTextTheme(),
           scaffoldBackgroundColor: const Color(0xFFF8F9FA),
           appBarTheme: const AppBarTheme(
             backgroundColor: Colors.transparent,
@@ -125,8 +126,10 @@ class MyApp extends StatelessWidget {
           ),
         ),
         darkTheme: ThemeData(
+        darkTheme: ThemeData(
           useMaterial3: true,
           colorScheme: darkColorScheme,
+          textTheme: GoogleFonts.poppinsTextTheme(ThemeData.dark().textTheme),
           textTheme: GoogleFonts.poppinsTextTheme(ThemeData.dark().textTheme),
           scaffoldBackgroundColor: const Color(0xFF121212),
           appBarTheme: const AppBarTheme(
