@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:visionai/screens/auth/register_screen.dart';
 import 'package:visionai/widgets/custom_text_field.dart';
+import 'package:visionai/services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,8 +15,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _authService = AuthService();
   bool _isPasswordVisible = false;
   bool _rememberMe = false;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -30,11 +33,65 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  void _login() {
+  Future<void> _login() async {
     if (_formKey.currentState!.validate()) {
-      // In a real app, you would authenticate with your backend here
-      GoRouter.of(context).go('/home');
+      setState(() => _isLoading = true);
+      try {
+        final credential = await _authService.signInWithEmailPassword(
+          _emailController.text.trim(),
+          _passwordController.text,
+        );
+        if (credential != null) {
+          GoRouter.of(context).go('/home');
+        }
+      } catch (e) {
+        _showErrorDialog(e.toString());
+      } finally {
+        setState(() => _isLoading = false);
+      }
     }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      print('Login screen: Starting Google sign-in process');
+      final credential = await _authService.signInWithGoogle();
+      
+      // Check if we're signed in regardless of credential return value
+      if (_authService.currentUser != null) {
+        print('Login screen: User is signed in, navigating to home');
+        GoRouter.of(context).go('/home');
+      } else if (credential != null) {
+        print('Login screen: Google sign-in successful, navigating to home');
+        GoRouter.of(context).go('/home');
+      } else {
+        print('Login screen: Google sign-in cancelled by user');
+      }
+    } catch (e) {
+      print('Login screen: Google sign-in error: $e');
+      _showErrorDialog('Google Sign-In Error: ${e.toString()}');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Error'),
+        content: SingleChildScrollView(
+          child: Text(message),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _navigateToRegister() {
@@ -184,7 +241,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: double.infinity,
                         height: 56,
                         child: ElevatedButton(
-                          onPressed: _login,
+                          onPressed: _isLoading ? null : _login,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: colorScheme.primary,
                             foregroundColor: colorScheme.onPrimary,
@@ -193,13 +250,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          child: const Text(
-                            'Sign In',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          child: _isLoading
+                              ? const CircularProgressIndicator(color: Colors.white)
+                              : const Text(
+                                  'Sign In',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                         ),
                       ),
                     ],
@@ -239,22 +298,20 @@ class _LoginScreenState extends State<LoginScreen> {
                     _socialLoginButton(
                       icon: Icons.g_mobiledata,
                       color: Colors.red,
-                      onPressed: () {
-                        // Implement Google login
-                      },
+                      onPressed: _signInWithGoogle,
                     ),
                     _socialLoginButton(
                       icon: Icons.facebook,
                       color: Colors.blue,
                       onPressed: () {
-                        // Implement Facebook login
+                        _showErrorDialog('Facebook login is not implemented yet');
                       },
                     ),
                     _socialLoginButton(
                       icon: Icons.apple,
                       color: Colors.black,
                       onPressed: () {
-                        // Implement Apple login
+                        _showErrorDialog('Apple login is not implemented yet');
                       },
                     ),
                   ],
@@ -280,7 +337,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
               ],
             ),
           ),
