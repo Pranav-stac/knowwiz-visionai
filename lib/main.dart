@@ -5,8 +5,14 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:visionai/providers/scene_description_provider.dart';
 import 'package:visionai/screens/splash_screen.dart';
+import 'package:visionai/screens/onboarding/onboarding_screen.dart';
+import 'package:visionai/screens/auth/login_screen.dart';
+import 'package:visionai/screens/home/home_screen.dart';
 import 'package:visionai/theme/app_theme.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
+import 'screens/features/dyslexic_learning_screen.dart';
+import 'screens/features/mental_health_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,6 +55,36 @@ Future<void> main() async {
   runApp(const MyApp());
 }
 
+final _router = GoRouter(
+  initialLocation: '/',
+  routes: [
+    GoRoute(
+      path: '/',
+      builder: (context, state) => const SplashScreen(),
+    ),
+    GoRoute(
+      path: '/onboarding',
+      builder: (context, state) => const OnboardingScreen(),
+    ),
+    GoRoute(
+      path: '/login',
+      builder: (context, state) => const LoginScreen(),
+    ),
+    GoRoute(
+      path: '/home',
+      builder: (context, state) => const HomeScreen(),
+    ),
+    GoRoute(
+      path: '/dyslexic-learning',
+      builder: (context, state) => const DyslexicLearningScreen(),
+    ),
+    GoRoute(
+      path: '/mental-health',
+      builder: (context, state) => const MentalHealthScreen(),
+    ),
+  ],
+);
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -58,15 +94,14 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => SceneDescriptionProvider()),
       ],
-      child: MaterialApp(
-        title: 'VisionAI',
+      child: MaterialApp.router(
+        title: 'Vision AI',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme.copyWith(
+        routerConfig: _router,
+        theme: ThemeData(
           useMaterial3: true,
           colorScheme: lightColorScheme,
-          textTheme: GoogleFonts.poppinsTextTheme(
-            Theme.of(context).textTheme,
-          ),
+          textTheme: GoogleFonts.poppinsTextTheme(),
           scaffoldBackgroundColor: const Color(0xFFF8F9FA),
           appBarTheme: const AppBarTheme(
             backgroundColor: Colors.transparent,
@@ -88,18 +123,11 @@ class MyApp extends StatelessWidget {
               ),
             ),
           ),
-          extensions: <ThemeExtension<dynamic>>[
-            CustomFonts(
-              openDyslexic: const TextStyle(fontFamily: 'OpenDyslexic'),
-            ),
-          ],
         ),
-        darkTheme: AppTheme.darkTheme.copyWith(
+        darkTheme: ThemeData(
           useMaterial3: true,
           colorScheme: darkColorScheme,
-          textTheme: GoogleFonts.poppinsTextTheme(
-            Theme.of(context).textTheme,
-          ),
+          textTheme: GoogleFonts.poppinsTextTheme(ThemeData.dark().textTheme),
           scaffoldBackgroundColor: const Color(0xFF121212),
           appBarTheme: const AppBarTheme(
             backgroundColor: Colors.transparent,
@@ -121,43 +149,9 @@ class MyApp extends StatelessWidget {
               ),
             ),
           ),
-          extensions: <ThemeExtension<dynamic>>[
-            CustomFonts(
-              openDyslexic: const TextStyle(fontFamily: 'OpenDyslexic'),
-            ),
-          ],
         ),
         themeMode: ThemeMode.system,
-        home: const SplashScreen(),
       ),
-    );
-  }
-}
-
-// Custom ThemeExtension for additional fonts
-class CustomFonts extends ThemeExtension<CustomFonts> {
-  final TextStyle openDyslexic;
-
-  CustomFonts({
-    required this.openDyslexic,
-  });
-
-  @override
-  ThemeExtension<CustomFonts> copyWith({
-    TextStyle? openDyslexic,
-  }) {
-    return CustomFonts(
-      openDyslexic: openDyslexic ?? this.openDyslexic,
-    );
-  }
-
-  @override
-  ThemeExtension<CustomFonts> lerp(ThemeExtension<CustomFonts>? other, double t) {
-    if (other is! CustomFonts) {
-      return this;
-    }
-    return CustomFonts(
-      openDyslexic: TextStyle.lerp(openDyslexic, other.openDyslexic, t)!,
     );
   }
 }

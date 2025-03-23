@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:visionai/screens/auth/register_screen.dart';
-import 'package:visionai/screens/home/home_screen.dart';
 import 'package:visionai/widgets/custom_text_field.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -33,9 +33,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void _login() {
     if (_formKey.currentState!.validate()) {
       // In a real app, you would authenticate with your backend here
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+      GoRouter.of(context).go('/home');
     }
   }
 

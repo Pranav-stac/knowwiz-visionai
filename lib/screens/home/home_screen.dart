@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:visionai/screens/features/captioning_screen.dart';
+import 'package:visionai/screens/features/dyslexic_learning_screen.dart';
 import 'package:visionai/screens/features/voice_generation_screen.dart';
 import 'package:visionai/screens/features/scene_description_screen.dart';
 
@@ -9,6 +10,7 @@ import 'package:visionai/screens/features/learning_resources_screen.dart';
 import 'package:visionai/screens/features/image_captioning_screen.dart';
 import 'package:visionai/widgets/feature_card.dart';
 import 'package:visionai/screens/profile/profile_screen.dart';
+import 'package:go_router/go_router.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -322,13 +324,8 @@ class HomeContent extends StatelessWidget {
                     description: 'AI-driven emotional support',
                     icon: Icons.favorite,
                     color: Colors.red,
-                    onTap: () async {
-                      final url = 'https://useful-herring-radically.ngrok-free.app';
-                      if (await canLaunch(url)) {
-                        await launch(url);
-                      } else {
-                        throw 'Could not launch $url';
-                      }
+                    onTap: () {
+                      GoRouter.of(context).go('/mental-health');
                     },
                   ),
                   FeatureCard(
@@ -355,6 +352,20 @@ class HomeContent extends StatelessWidget {
                         context,
                         MaterialPageRoute(
                           builder: (context) => const LearningResourcesScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  FeatureCard(
+                    title: 'Dyslexic Learning',
+                    description: 'Educational content & AR/VR',
+                    icon: Icons.school,
+                    color: Colors.teal,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const DyslexicLearningScreen(),
                         ),
                       );
                     },
