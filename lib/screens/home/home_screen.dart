@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:visionai/screens/features/captioning_screen.dart';
-import 'package:visionai/screens/features/dyslexic_learning_screen.dart';
 import 'package:visionai/screens/features/voice_generation_screen.dart';
 import 'package:visionai/screens/features/scene_description_screen.dart';
 
@@ -356,20 +355,7 @@ class HomeContent extends StatelessWidget {
                       );
                     },
                   ),
-                  FeatureCard(
-                    title: 'Dyslexic Learning',
-                    description: 'Educational content & AR/VR',
-                    icon: Icons.school,
-                    color: Colors.teal,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const DyslexicLearningScreen(),
-                        ),
-                      );
-                    },
-                  ),
+                 
                 ],
               ),
             ),
