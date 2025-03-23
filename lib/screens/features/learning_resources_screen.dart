@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'ar_learning_screen.dart';
+import 'package:go_router/go_router.dart';
 
 class LearningResourcesScreen extends StatefulWidget {
   const LearningResourcesScreen({super.key});
@@ -111,14 +111,14 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
     ),
     LearningResource(
       id: '9',
-      title: 'AR Learning for Dyslexic Kids',
-      description: 'Interactive AR experience helping dyslexic children learn about objects, animals, and letters in an accessible way.',
+      title: 'Dyslexic Learning in AR',
+      description: 'Interactive 3D models to help dyslexic children learn letters, numbers, and concepts with AR technology.',
       type: 'AR/VR',
       imageUrl: null,
-      duration: '15 min',
-      level: 'Beginner',
+      duration: '30 min',
+      level: 'All Levels',
       isNew: true,
-      isPopular: false,
+      isPopular: true,
     ),
   ];
 
@@ -723,18 +723,14 @@ class _LearningResourcesScreenState extends State<LearningResourcesScreen> {
   }
 
   void _openResource(LearningResource resource) {
-    // Special handling for our AR Learning for Dyslexic Kids resource
+    // Check if this is our special dyslexic learning resource
     if (resource.id == '9') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const ARLearningScreen(),
-        ),
-      );
+      // Navigate to the dyslexic learning screen
+      GoRouter.of(context).go('/dyslexic-learning');
       return;
     }
     
-    // Original implementation for other resources
+    // Original dialog for other resources
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
