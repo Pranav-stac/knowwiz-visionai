@@ -24,7 +24,6 @@ Our integrated mobile app and volunteer platform work in harmony to address the 
 - Real-time camera image analysis that verbalizes environments
 - Object recognition with spatial positioning information
 - Text detection and reading (signs, labels, documents)
-- Facial recognition for familiar contacts
 - Distance estimation and hazard warnings
 - Indoor navigation assistance with spatial mapping
 
