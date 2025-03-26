@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:math' as math;
 
 class ImageCaptioningScreen extends StatefulWidget {
   const ImageCaptioningScreen({super.key});
@@ -31,7 +32,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
   
   // Continuous streaming variables
   Timer? _streamProcessTimer;
-  int _minWordsForProcessing = 2;
+  int _minWordsForProcessing = 5;
   int _streamProcessDelay = 1000; // milliseconds
   
   // Reliability tracking
@@ -47,6 +48,30 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
   int _noMatchCount = 0;
   Timer? _cooldownTimer;
   bool _inCooldownPeriod = false;
+  
+  // Update these constants for smoother operation
+  static const int _cooldownDuration = 3; // In seconds, reduced from 5
+  static const int _listenDuration = 30; // Longer listen duration
+  static const int _pauseForDuration = 4; // Longer pause tolerance
+
+  // Modify these variables at the class level
+  bool _processingCompleteSentence = false;
+  List<String> _completeUtterances = [];
+  String _currentSentenceBuffer = '';
+
+  // Add this variable to better track consecutive errors
+  int _consecutiveErrorCount = 0;
+  String _bufferedSpeech = ''; // Buffer to collect speech across restarts
+
+  // Add these variables to track speech activity
+  DateTime? _lastSpeechTime;
+  bool _isSpeaking = false;
+  Timer? _speechPauseTimer;
+  int _silenceDurationMs = 1200; // Wait this long after speech stops before processing
+
+  // Add these variables at the class level
+  DateTime _lastProcessTime = DateTime.now().subtract(Duration(days: 1));
+  bool _isProcessingText = false;
 
   @override
   void initState() {
@@ -91,63 +116,50 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
       onStatus: (status) {
         print('Speech recognition status: $status');
         
-        if (status == 'done' || status == 'notListening') {
-          if (_isListening) {
-            // Only attempt restart if we're not already in cooldown period
-            if (!_inCooldownPeriod && 
-                (_lastRestartTime == null || 
-                DateTime.now().difference(_lastRestartTime!).inMilliseconds > 1500)) {
-              print('Status shows speech ended but we want to keep listening - scheduling restart');
-              _scheduleRestart(500); // Use a moderate delay before restart
-            } else {
-              print('Ignoring status event as we recently tried to restart or in cooldown');
-            }
-          }
-        } else if (status == 'listening') {
-          // Reset error counters when we successfully start listening
-          _timeoutCount = 0;
+        if (status == 'listening') {
+          print('✅ Speech recognition is now actively listening');
+          // Reset error counters when successfully listening
           _noMatchCount = 0;
+          _consecutiveErrorCount = 0;
+        }
+        else if (status == 'done' || status == 'notListening') {
+          print('⚠️ Speech recognition stopped - status: $status');
+          
+          if (_isListening && !_inCooldownPeriod && !_restartPending) {
+            // Schedule a quick restart
+            print('Scheduling quick restart to maintain continuous listening');
+            _scheduleRestart(300); // Very quick restart
+          }
         }
       },
       onError: (errorNotification) {
-        print('Speech recognition error: ${errorNotification.errorMsg}, permanent: ${errorNotification.permanent}');
+        print('❌ Speech recognition error: ${errorNotification.errorMsg}, permanent: ${errorNotification.permanent}');
         
-        // Handle specific error types
-        if (errorNotification.errorMsg == 'error_speech_timeout') {
-          _timeoutCount++;
-          print('Speech timeout detected. Count: $_timeoutCount');
-          
-          if (_timeoutCount >= 3) {
-            // If we get too many timeouts, enter cooldown mode
-            _enterCooldownMode('Multiple speech timeouts detected');
-            return;
-          }
-        } 
-        else if (errorNotification.errorMsg == 'error_no_match') {
+        _consecutiveErrorCount++;
+        
+        // Different handling based on error type
+        if (errorNotification.errorMsg == 'error_no_match') {
           _noMatchCount++;
           print('No speech match detected. Count: $_noMatchCount');
           
-          if (_noMatchCount >= 3) {
-            // If we get too many no-match errors, enter cooldown mode
-            _enterCooldownMode('No speech detected after multiple attempts');
-            return;
+          // For no-match errors, try a very quick restart
+          if (_isListening && !_inCooldownPeriod && !_restartPending) {
+            int delayMs = 200; // Very small delay for no-match errors
+            print('Quick restart for no-match error');
+            _scheduleRestart(delayMs);
           }
         }
-        
-        // Improve error handling based on error type
-        if (_isListening && !_inCooldownPeriod) {
-          // Don't restart for permanent errors repeatedly
-          if (errorNotification.permanent) {
-            if (_restartAttempts >= _maxRestartAttempts) {
-              print('Too many permanent errors, entering cooldown mode');
-              _enterCooldownMode('Speech recognition needs a break');
-              return;
-            }
-          }
-          
-          // Handle network or temporary errors with shorter delays
-          int delayMs = errorNotification.permanent ? 1200 : 500;
+        else if (_isListening && !_inCooldownPeriod && !_restartPending) {
+          // For other errors, use a progressive delay strategy
+          int delayMs = 300 * (_consecutiveErrorCount > 3 ? 3 : _consecutiveErrorCount);
           _scheduleRestart(delayMs);
+        }
+        
+        // Enter cooldown only after many consecutive errors
+        if (_consecutiveErrorCount > 8) {
+          _enterCooldownMode('Taking a short break after multiple errors');
+          // Reset counter
+          _consecutiveErrorCount = 0;
         }
       },
     );
@@ -156,7 +168,6 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
   
   // Schedule a restart with specific delay and tracking
   void _scheduleRestart(int delayMs) {
-    // Check if we already have a pending restart or in cooldown
     if (_restartPending || _inCooldownPeriod) {
       print('Restart already pending or in cooldown, ignoring new request');
       return;
@@ -181,52 +192,43 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     _restartAttempts++;
     _lastRestartTime = DateTime.now();
     
-    // Progressive backoff - increase pause between restarts
-    int pauseDuration = 300;
-    if (_restartAttempts > 1) {
-      pauseDuration = 300 * _restartAttempts;
-      if (pauseDuration > 2000) pauseDuration = 2000; // cap at 2 seconds
-    }
+    // Progressively increase pause between restarts, but keep it relatively short
+    int pauseDuration = 100 * _restartAttempts;
+    if (pauseDuration > 800) pauseDuration = 800; // cap at 800ms
     
     print('Forcing restart with ${pauseDuration}ms delay (attempt #$_restartAttempts)');
     
     // Stop the current speech recognition session
     _speech.stop().then((_) {
-      // If user has turned off listening during the restart process, don't continue
+      // If user turned off listening during restart, don't continue
       if (!_isListening) {
         print('User stopped listening during restart, aborting');
         return;
       }
       
-      // Trigger cooldown mode if we've reached the max attempts
-      if (_restartAttempts >= _maxRestartAttempts) {
-        _enterCooldownMode('Too many restart attempts');
-        return;
-      }
-      
-      // Small additional pause for the system to clean up
+      // Enforced pause to let the system recover
       Future.delayed(Duration(milliseconds: pauseDuration), () {
         if (_isListening && !_inCooldownPeriod) {
-          // Reset restart counter if it's been a while since our last restart
+          // Reset counter if it's been a while since last restart
           if (_lastRestartTime != null && 
-              DateTime.now().difference(_lastRestartTime!).inSeconds > 10) {
-            print('Resetting restart attempt counter');
+              DateTime.now().difference(_lastRestartTime!).inSeconds > 15) {
+            print('Resetting restart attempt counter - been a while since last restart');
             _restartAttempts = 0;
           }
           
+          // Force cooldown if we've been restarting too much
+          if (_restartAttempts > _maxRestartAttempts) {
+            _enterCooldownMode('Too many restart attempts, taking a break');
+            return;
+          }
+          
+          // Start fresh recognition
           _startSpeechRecognition();
         }
       });
     }).catchError((e) {
       print('Error stopping speech for restart: $e');
-      // Handle error and maybe enter cooldown
-      if (_restartAttempts >= _maxRestartAttempts - 1) {
-        _enterCooldownMode('Error during restart process');
-        return;
-      }
-      
-      // Still try to restart after a longer delay
-      Future.delayed(Duration(milliseconds: pauseDuration + 500), () {
+      Future.delayed(Duration(milliseconds: pauseDuration + 200), () {
         if (_isListening && !_inCooldownPeriod) {
           _startSpeechRecognition();
         }
@@ -245,26 +247,25 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
       print('Starting fresh speech recognition');
       _speech.listen(
         onResult: _onSpeechResult,
-        listenFor: const Duration(seconds: 20), // Shorter sessions to avoid timeouts
-        pauseFor: const Duration(seconds: 3),
+        listenFor: Duration(seconds: _listenDuration), // Longer session
+        pauseFor: Duration(seconds: _pauseForDuration), // Longer pause tolerance
         partialResults: true,
         localeId: _speechLocale,
         listenMode: stt.ListenMode.dictation,
         cancelOnError: false,
       );
       
-      // Set up monitoring to detect if speech stops
+      // Set up monitoring but with less frequent checks
       _createListeningMonitor();
       
     } catch (e) {
       print('Error in _startSpeechRecognition: $e');
-      // Try to restart after a delay or enter cooldown if too many errors
       if (_restartAttempts >= _maxRestartAttempts - 1) {
-        _enterCooldownMode('Error starting speech recognition');
+        _enterCooldownMode('Unable to start listening');
       } else {
-        Future.delayed(const Duration(seconds: 1), () {
+        Future.delayed(const Duration(milliseconds: 800), () {
           if (_isListening && !_inCooldownPeriod) {
-            _scheduleRestart(1000);
+            _scheduleRestart(600);
           }
         });
       }
@@ -321,17 +322,26 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     setState(() {
       _isListening = true;
       _currentVoiceText = '';
-      _restartAttempts = 0;  // Reset restart counter
+      _restartAttempts = 0;
       _restartPending = false;
       _inCooldownPeriod = false;
+      
+      // Clear deduplication history
+      _lastProcessedText = '';
+      _lastProcessTime = DateTime.now().subtract(Duration(days: 1));
+      _isProcessingText = false;
     });
     
     // Setup timer for continuous processing
     _streamProcessTimer = Timer.periodic(
-      Duration(milliseconds: _streamProcessDelay), 
+      const Duration(milliseconds: 2000),
       (timer) {
-        _processCurrentSpeechStream();
-      }
+        // Just do nothing, or you can put any other monitoring code here
+        if (_isListening && _currentVoiceText.isNotEmpty) {
+          // Maybe log something if needed
+          // print('Current text: $_currentVoiceText');
+        }
+      },
     );
     
     // Create a backup timer that keeps checking if we need to restart
@@ -371,106 +381,127 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
     }
   }
   
-  // Process speech text during streaming
-  void _processCurrentSpeechStream() {
-    if (!_isListening || _currentVoiceText.isEmpty || _isGeneratingImage) {
-      return;
-    }
-    
-    // Count words to ensure we have enough content
-    final wordCount = _currentVoiceText.trim().split(' ').where((word) => word.isNotEmpty).length;
-    
-    // Only process if we have new content and enough words
-    if (_currentVoiceText != _lastProcessedText && wordCount >= _minWordsForProcessing) {
-      print('Processing stream text: "$_currentVoiceText"');
-      _generateImageFromText(_currentVoiceText);
-      
-      // Add to captions for real-time feedback
-      _captions.add(
-        CaptionItem(
-          text: _currentVoiceText,
-          timestamp: DateTime.now(),
-          speaker: 'User',
-          isPartial: true,
-        ),
-      );
-      
-      _lastProcessedText = _currentVoiceText;
-      _scrollToBottom();
-    }
-  }
-  
-  // Handle speech recognition results
+  // Replace the entire speech processing flow with this streamlined approach
   void _onSpeechResult(SpeechRecognitionResult result) {
-    // Check if we're still supposed to be listening. If not, ignore the result
+    // Check if we're still supposed to be listening
     if (!_isListening) return;
     
+    final String recognizedText = result.recognizedWords;
+    
+    // Always update displayed text
     setState(() {
-      _currentVoiceText = result.recognizedWords;
-      
-      // Add a new caption if this is a final result
-      if (result.finalResult) {
-        // Process the final result only if we have recognizable text
-        if (_currentVoiceText.isNotEmpty) {
-          // Update the last caption if it was partial with the same text
-          bool updatedExisting = false;
-          if (_captions.isNotEmpty && _captions.last.isPartial && 
-              _captions.last.text.trim() == _currentVoiceText.trim()) {
-            final updatedList = List<CaptionItem>.from(_captions);
-            updatedList[updatedList.length - 1] = CaptionItem(
-              text: _currentVoiceText,
-              timestamp: DateTime.now(),
-              speaker: 'User',
-              isPartial: false,
-            );
-            _captions.clear();
-            _captions.addAll(updatedList);
-            updatedExisting = true;
-          }
-          
-          // Only add new caption if we didn't update an existing one
-          if (!updatedExisting) {
-            _captions.add(
-              CaptionItem(
-                text: _currentVoiceText,
-                timestamp: DateTime.now(),
-                speaker: 'User',
-                isPartial: false,
-              ),
-            );
-          }
-          
-          // Generate image from the final text if it hasn't been processed already
-          if (_currentVoiceText != _lastProcessedText) {
-            _generateImageFromText(_currentVoiceText);
-            _lastProcessedText = _currentVoiceText;
-          }
-          
-          // Auto-scroll to the bottom
-          _scrollToBottom();
-          
-          // Reset for the next utterance but continue listening
-          _currentVoiceText = '';
-          
-          print('Final result processed, ensuring recognition continues');
-        }
-        
-        // Some Android devices may stop listening after a final result
-        // Only check if not already in the middle of a restart
-        if (!_restartPending) {
-          // Use a short timer to check if speech recognition has actually stopped
-          Future.delayed(const Duration(milliseconds: 200), () {
-            if (_isListening && !_speech.isListening && !_restartPending) {
-              print('Recognition stopped after final result, scheduling restart');
-              _scheduleRestart(200);
-            }
-          });
-        }
-      }
+      _currentVoiceText = recognizedText;
     });
+    
+    // Only process final results
+    if (result.finalResult && recognizedText.isNotEmpty) {
+      print('📝 Final speech result: "$recognizedText"');
+      
+      // Critical check: Only process if text is different AND enough time has passed
+      if (_shouldProcessText(recognizedText)) {
+        _processRecognizedText(recognizedText);
+      } else {
+        print('🚫 BLOCKING DUPLICATE: "$recognizedText"');
+      }
+    }
   }
   
-  // Generate image from text using the API
+  // New method to centralize duplicate checking
+  bool _shouldProcessText(String text) {
+    // Empty check
+    if (text.isEmpty) return false;
+    
+    // Too similar to last processed text
+    if (_textIsSimilar(text, _lastProcessedText)) {
+      // Calculate time since last process
+      final timeSince = DateTime.now().difference(_lastProcessTime).inSeconds;
+      
+      // If we processed a similar text recently, block it
+      if (timeSince < 10) { // Increased to 10 seconds for stricter blocking
+        print('⏱️ Only ${timeSince}s since last similar text was processed');
+        return false;
+      }
+    }
+    
+    // If we're currently processing, block new requests
+    if (_isProcessingText) {
+      print('⚙️ Currently processing another text, blocking this one');
+      return false;
+    }
+    
+    return true;
+  }
+  
+  // New method to check if texts are similar
+  bool _textIsSimilar(String text1, String text2) {
+    // Exact match
+    if (text1 == text2) return true;
+    
+    // Clean both texts
+    final clean1 = text1.toLowerCase().trim();
+    final clean2 = text2.toLowerCase().trim();
+    
+    // Exact match after cleaning
+    if (clean1 == clean2) return true;
+    
+    // If one contains the other
+    if (clean1.contains(clean2) || clean2.contains(clean1)) return true;
+    
+    // Split into words and count matching words
+    final words1 = clean1.split(' ').where((w) => w.isNotEmpty).toList();
+    final words2 = clean2.split(' ').where((w) => w.isNotEmpty).toList();
+    
+    // Count matching words
+    int matchingWords = 0;
+    for (var word in words1) {
+      if (words2.contains(word)) matchingWords++;
+    }
+    
+    // If 75% of words match, consider them similar
+    final similarity = matchingWords / math.max(words1.length, words2.length);
+    return similarity > 0.75;
+  }
+  
+  // Create a centralized processing method
+  Future<void> _processRecognizedText(String text) async {
+    // Guard to prevent processing empty text or during cooldown
+    if (text.isEmpty || _inCooldownPeriod) return;
+    
+    // Set processing flag to block other attempts
+    _isProcessingText = true;
+    
+    // Log processing
+    print('');
+    print('🔄 PROCESSING TEXT: "$text"');
+    print('📅 Last processed: "${_lastProcessedText}" (${DateTime.now().difference(_lastProcessTime).inSeconds}s ago)');
+    print('');
+    
+    // Update tracking variables
+    _lastProcessedText = text;
+    _lastProcessTime = DateTime.now();
+    
+    // Add to captions for UI
+    setState(() {
+      _captions.add(
+        CaptionItem(
+          text: text,
+          timestamp: DateTime.now(),
+          speaker: 'User',
+          isPartial: false,
+        ),
+      );
+    });
+    
+    _scrollToBottom();
+    
+    // Generate image
+    await _generateImageFromText(text);
+    
+    // Clear processing flag
+    _isProcessingText = false;
+  }
+  
+  // Update the image generation method to be simpler
   Future<void> _generateImageFromText(String text) async {
     if (text.isEmpty || _isGeneratingImage) return;
     
@@ -478,8 +509,9 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
       _isGeneratingImage = true;
     });
     
+    print('🖼️ GENERATING IMAGE FOR: "$text"');
+    
     try {
-      print('Generating image for text: "$text"');
       final response = await http.post(
         Uri.parse("https://pranavai.onrender.com/generate"),
         headers: {'Content-Type': 'application/json'},
@@ -487,6 +519,8 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
           "prompt": text
         }),
       );
+      
+      print('API Response Status: ${response.statusCode}');
       
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
@@ -497,16 +531,16 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
           if (imageData.containsKey('url') && imageData['url'].toString().startsWith('data:image')) {
             setState(() {
               _generatedImageUrl = imageData['url'];
-              _isGeneratingImage = false;
             });
-            return;
+            
+            print('✅ Successfully generated image for: "$text"');
           }
         }
+      } else {
+        print('❌ Image generation failed: ${response.statusCode}');
       }
-      
-      print('Failed to generate image: ${response.statusCode} - ${response.body}');
     } catch (e) {
-      print('Error generating image: $e');
+      print('❌ Error generating image: $e');
     }
     
     setState(() {
@@ -644,7 +678,7 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
                       _streamProcessTimer!.cancel();
                       _streamProcessTimer = Timer.periodic(
                         Duration(milliseconds: delayMs), 
-                        (timer) => _processCurrentSpeechStream()
+                        (timer) => {/* Do nothing */}
                       );
                     }
                     
@@ -669,14 +703,13 @@ class _ImageCaptioningScreenState extends State<ImageCaptioningScreen> with Widg
   Timer? _listeningMonitorTimer;
   
   void _createListeningMonitor() {
-    // Cancel any existing timer
     _listeningMonitorTimer?.cancel();
     
-    // Check more frequently if we're still listening
-    _listeningMonitorTimer = Timer.periodic(const Duration(milliseconds: 750), (timer) {
-      if (_isListening && !_speech.isListening && !_restartPending) {
+    // Check every 2 seconds which is less frequent
+    _listeningMonitorTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (_isListening && !_speech.isListening && !_restartPending && !_inCooldownPeriod) {
         print('Monitor detected listening stopped unexpectedly');
-        _scheduleRestart(500);
+        _scheduleRestart(400);
       }
     });
   }

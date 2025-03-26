@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -16,6 +17,15 @@ class AuthService {
 
   // Get current user
   User? get currentUser => _auth.currentUser;
+
+  // Simulate a logged-in user
+  static Map<String, dynamic>? _currentUser;
+
+  // Check if user is logged in
+  bool get isLoggedIn => _currentUser != null;
+
+  // Get current user - fixed to avoid naming conflicts
+  Map<String, dynamic>? get dummyUser => _currentUser;
 
   // Email/Password Sign In
   Future<UserCredential?> signInWithEmailPassword(String email, String password) async {
@@ -237,6 +247,8 @@ class AuthService {
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     await _auth.signOut();
+    await Future.delayed(const Duration(milliseconds: 500));
+    _currentUser = null;
   }
 
   // Error Handler
@@ -278,5 +290,38 @@ class AuthService {
     } catch (e) {
       print('Error during GoogleSignIn setup check: $e');
     }
+  }
+
+  // Sign in with email and password (always succeeds)
+  Future<Map<String, dynamic>> signInWithEmailAndPassword(
+      String email, String password) async {
+    // Simulate network delay
+    await Future.delayed(const Duration(milliseconds: 800));
+    
+    // Create a dummy user
+    _currentUser = {
+      'uid': 'dummy-user-id',
+      'email': email,
+      'displayName': email.split('@')[0],
+      'photoURL': null,
+    };
+    
+    return _currentUser!;
+  }
+
+  // Sign in with Google (always succeeds)
+  Future<Map<String, dynamic>> dummySignInWithGoogle() async {
+    // Simulate network delay
+    await Future.delayed(const Duration(milliseconds: 800));
+    
+    // Create a dummy Google user
+    _currentUser = {
+      'uid': 'google-dummy-id',
+      'email': 'demo@gmail.com',
+      'displayName': 'Google User',
+      'photoURL': null,
+    };
+    
+    return _currentUser!;
   }
 } 

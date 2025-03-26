@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:visionai/screens/auth/login_screen.dart';
 import 'dart:ui';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -19,7 +21,23 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   // Single animation controller for simpler management
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+
+  final _auth = FirebaseAuth.instance;
+  final _database = FirebaseDatabase.instance.ref();
   
+  // Remove the duplicate _userData declaration and combine with hardcoded values
+  final Map<String, dynamic> _userData = {
+    'fullName': 'Tom Stark',
+    'email': 'tomstark159@gmail.com',
+    'type': 'User',
+    'createdAt': "2025-03-23T10:43:35.569636",
+    'verified': true,
+    'online': true,
+    'photo_url': "https://lh3.googleusercontent.com/a/ACg8ocIbAr9hUpJBe6Xoa7WhbpP5Q-vmPgWkRz2_QtnNa8H6MESpjQ=s96-c",
+  };
+  
+  bool _isLoading = false; // Changed to false since we're using hardcoded data
+
   @override
   void initState() {
     super.initState();
@@ -74,193 +92,142 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
 
     return Scaffold(
       backgroundColor: backgroundColor,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Profile Header
-            Container(
-              height: size.height * 0.28,
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Stack(
-                children: [
-                  // Background gradient with effect
-                  Positioned.fill(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Colors.blue.shade900,
-                            Colors.blue.shade800,
-                            Colors.blue.shade700,
-                          ],
-                        ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: ShaderMask(
-                          shaderCallback: (rect) {
-                            return LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                Colors.black.withOpacity(0.6),
-                                Colors.black.withOpacity(0.4),
-                              ],
-                            ).createShader(rect);
-                          },
-                          blendMode: BlendMode.dstATop,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(24),
-                              color: Colors.transparent,
-                            ),
-                          ),
-                        ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : CustomScrollView(
+              slivers: [
+                SliverAppBar(
+                  expandedHeight: 200,
+                  floating: false,
+                  pinned: true,
+                  flexibleSpace: FlexibleSpaceBar(
+                    title: Text(
+                      _userData['fullName'],
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
-                  
-                  // Profile content
-                  Padding(
-                    padding: const EdgeInsets.all(20.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    background: Stack(
+                      fit: StackFit.expand,
                       children: [
-                        // Profile avatar
                         Container(
-                          width: 100,
-                          height: 100,
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white,
-                              width: 3,
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Theme.of(context).primaryColor,
+                                Theme.of(context).primaryColor.withOpacity(0.8),
+                              ],
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
-                                blurRadius: 15,
-                                offset: const Offset(0, 5),
+                          ),
+                        ),
+                        Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 120,
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 3,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.2),
+                                      blurRadius: 10,
+                                      spreadRadius: 5,
+                                    ),
+                                  ],
+                                ),
+                                child: ClipOval(
+                                  child: Image.network(
+                                    _userData['photo_url'],
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => const Icon(
+                                      Icons.person,
+                                      size: 60,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
                               ),
+                              const SizedBox(height: 16),
                             ],
                           ),
-                          child: CircleAvatar(
-                            backgroundColor: Colors.grey[800],
-                            child: const Icon(
-                              Icons.person,
-                              size: 50,
-                              color: Colors.white,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SliverFillRemaining(
+                  child: SafeArea(
+                    child: Column(
+                      children: [
+                        // Tab Bar
+                        Container(
+                          margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: cardColor,
+                            borderRadius: BorderRadius.circular(25),
+                          ),
+                          child: TabBar(
+                            controller: _tabController,
+                            indicator: BoxDecoration(
+                              borderRadius: BorderRadius.circular(25),
+                              color: primaryColor,
                             ),
+                            labelColor: Colors.white,
+                            unselectedLabelColor: Colors.white70,
+                            dividerColor: Colors.transparent,
+                            splashBorderRadius: BorderRadius.circular(25),
+                            tabs: _tabTitles.map((title) => 
+                              Tab(text: title)
+                            ).toList(),
                           ),
                         ),
+
                         const SizedBox(height: 16),
                         
-                        // User info
-                        const Text(
-                          'John Doe',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'john.doe@example.com',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.white.withOpacity(0.8),
-                          ),
-                        ),
-                        
-                        const SizedBox(height: 16),
-                        
-                        // Edit Profile Button
-                        ElevatedButton.icon(
-                          onPressed: () {},
-                          icon: const Icon(Icons.edit),
-                          label: const Text('Edit Profile'),
-                          style: ElevatedButton.styleFrom(
-                            foregroundColor: Colors.blue,
-                            backgroundColor: Colors.white,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 10,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(30),
+                        // Tab content
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: AnimatedBuilder(
+                              animation: _fadeAnimation,
+                              builder: (context, child) {
+                                return FadeTransition(
+                                  opacity: _fadeAnimation,
+                                  child: child,
+                                );
+                              },
+                              child: TabBarView(
+                                controller: _tabController,
+                                children: [
+                                  // Personal Tab
+                                  _buildTabContent(_buildPersonalTab(context)),
+                                  
+                                  // Settings Tab
+                                  _buildTabContent(_buildSettingsTab(context)),
+                                  
+                                  // Activity Tab
+                                  _buildTabContent(_buildActivityTab(context)),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
-            ),
-
-            // Tab Bar
-            Container(
-              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              height: 50,
-              decoration: BoxDecoration(
-                color: cardColor,
-                borderRadius: BorderRadius.circular(25),
-              ),
-              child: TabBar(
-                controller: _tabController,
-                indicator: BoxDecoration(
-                  borderRadius: BorderRadius.circular(25),
-                  color: primaryColor,
                 ),
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white70,
-                dividerColor: Colors.transparent,
-                splashBorderRadius: BorderRadius.circular(25),
-                tabs: _tabTitles.map((title) => 
-                  Tab(text: title)
-                ).toList(),
-              ),
+              ],
             ),
-
-            const SizedBox(height: 16),
-            
-            // Tab content
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: AnimatedBuilder(
-                  animation: _fadeAnimation,
-                  builder: (context, child) {
-                    return FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: child,
-                    );
-                  },
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      // Personal Tab
-                      _buildTabContent(_buildPersonalTab(context)),
-                      
-                      // Settings Tab
-                      _buildTabContent(_buildSettingsTab(context)),
-                      
-                      // Activity Tab
-                      _buildTabContent(_buildActivityTab(context)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -683,4 +650,4 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
       ),
     );
   }
-} 
+}
