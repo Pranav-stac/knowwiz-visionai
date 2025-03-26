@@ -2,8 +2,8 @@
 
 A groundbreaking assistive technology platform designed specifically for the specially-abled community, providing inclusive experiences through advanced AI technologies. Vision AI bridges accessibility gaps for individuals with visual, hearing, speech, cognitive, and physical impairments.
 
-![Vision AI Accessibility Platform](https://example.com/vision-ai-banner.png)
-
+![[Vision AI Accessibility Platform](https://example.com/vision-ai-banner.png)
+](https://appho.st/d/8Yh7AmZE)
 ## 🌟 Our Mission
 
 At Vision AI, we believe that technology should serve everyone, regardless of ability. Our platform combines cutting-edge AI with human compassion to create solutions that:
