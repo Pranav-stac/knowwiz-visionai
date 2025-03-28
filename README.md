@@ -11,7 +11,11 @@ A groundbreaking assistive technology platform designed to enhance accessibility
 
 
 ---
+# 🌟 Youtube Video  
 
+[![Watch the Video Demonstration](https://img.shields.io/badge/Video-red?style=for-the-badge&logo=android)](https://youtu.be/dpzp9yesFBo?si=wouX096ru9mKE2cQ)
+
+---
 ## 📖 Table of Contents  
 
 - [🌍 Our Mission](#-our-mission)  
