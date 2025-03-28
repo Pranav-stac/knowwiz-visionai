@@ -1,0 +1,31 @@
+﻿# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+.pub-cache/
+.pub/
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+venv/
+env/
+.env
+
+# IDE files
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Firebase credentials
+# Uncomment the line below if you want to exclude Firebase credentials
+# *firebase-adminsdk*.json
