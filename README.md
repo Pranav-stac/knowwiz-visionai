@@ -5,6 +5,7 @@ Here's a refined and beautifully formatted version of your README, optimized for
 # 🌟 Vision AI - Empowering Everyone  
 
 [![Download APK](https://img.shields.io/badge/Download-APK-green?style=for-the-badge&logo=android)](https://appho.st/d/8Yh7AmZE)
+Directly click on login with Google for testing 
 
 A groundbreaking assistive technology platform designed to enhance accessibility for individuals with visual, hearing, speech, cognitive, and physical impairments.  
 
